@@ -29,7 +29,12 @@ def freq_ctr_and_bw(bandcode):
         case 'L2':
             return 1227.6000, 11.000, 2.0, 2.0 # adequate for most L2 GPS uses?
         case 'L2C':
-            return 1227.6000, 11.000, 4.0, 2.046 # exact chip rate is 1.023 MHz (2x 511.5 Kbps)
+            # exact chip rate is 1.023 Msps (2x 511.5 Ksps multiplexed)
+            # "The CM code is 10,230 chips long, repeating every 20 ms.
+            #  The CL code is 767,250 chips long, repeating every 1,500 ms.
+            #  Each signal is transmitted at 511,500 chips per second (chip/s);
+            # however, they are multiplexed together to form a 1,023,000-chip/s signal."
+            return 1227.6000, 11.000, 4.0, 2.046
         case 'L3':
             return 1381.0500, 15.345, 2.0, 2.0
         case 'L4':
@@ -48,7 +53,7 @@ def freq_ctr_and_bw(bandcode):
             return 1575.4200, 24.552, 2.0, 2.0
         case 'H1':
             # Useful for recording hydrogen line in the same manner as we record GNSS
-            return 1420.4000, 12.000, 4.0, 2.0
+            return 1420.4000, 12.000, 2.0, 2.0
         case 'L1':
             # adequate for most L1 GPS uses
             return 1575.4200, 15.345, 2.0, 2.0
@@ -60,7 +65,6 @@ def freq_ctr_and_bw(bandcode):
         case 'L1PY':
             # chip rate for P(Y) code is 10.23E6 chips/sec?
             # number of chips is 10230 ?
-            # seconds/chip is
             return 1575.4200, 15.345, 10.23, 10.0
         case 'L1M':
             # Exact chip rate for M code is 5.115 MHz, and sub-carrier is 10.23 MHz?
