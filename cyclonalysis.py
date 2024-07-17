@@ -15,6 +15,68 @@ from sigmf import sigmffile, SigMFFile
 matplotlib.use('qtagg')
 
 
+import numpy as np
+import matplotlib.pyplot as plt
+
+def autocorrelation_sweep(sigfile_obj, start_index=0, total_samples=int(4E6), chunk_size=8192, max_lag=4096 ):
+    lag_limit = max_lag + 1
+    autocorr = np.zeros(lag_limit, dtype=np.complex64)
+
+    print(f'autocorrelation_sweep: {start_index} {total_samples} {chunk_size} {max_lag} ')
+
+    for start in range(start_index, total_samples-chunk_size, chunk_size):
+        chunk = sigfile_obj.read_samples(start_index=start, count=chunk_size)
+        end = min(start + chunk_size, total_samples)
+        for lag in range(max_lag + 1):
+            if start + lag < total_samples:
+                if lag < chunk_size:
+                    chunk_lag = chunk[lag:end - start]
+                else:
+                    chunk_lag = sigfile_obj.read_samples(start + lag, min(chunk_size, total_samples - (start + lag)))
+                autocorr[lag] += np.sum(chunk[:len(chunk_lag)] * np.conj(chunk_lag))
+
+    # Normalize the autocorrelation
+    autocorr /= total_samples
+    return autocorr
+
+
+def plot_autocorrelation(autocorr):
+    plt.figure(figsize=(12, 8))
+    lags = np.arange(len(autocorr))
+
+    plt.plot(lags, autocorr.real, label='Real Part')
+    plt.plot(lags, autocorr.imag, label='Imaginary Part')
+
+    plt.xlabel('Lag')
+    plt.ylabel('Autocorrelation')
+    # plt.title('Autocorrelation')
+    plt.legend()
+    plt.grid(True)
+
+def plot_autocorrelation_mag(autocorr):
+    plt.figure(figsize=(12, 8))
+    lags = np.arange(len(autocorr))
+
+    plt.plot(lags, np.abs(autocorr), label='Mag')
+    # plt.plot(lags, autocorr.imag, label='Imaginary Part')
+
+    plt.xlabel('Lag')
+    plt.ylabel('Autocorrelation')
+    # plt.title('Autocorrelation')
+    plt.legend()
+    plt.grid(True)
+
+# # Example usage:
+# # Generate a long array of complex64 samples
+# long_array = np.random.randn(10000).astype(np.complex64) + 1j * np.random.randn(10000).astype(np.complex64)
+#
+# # Calculate the autocorrelation for a range of lags (e.g., up to 100 samples)
+# autocorr_result = autocorrelation_complex64(long_array, max_lag=100)
+#
+# # Plot the autocorrelation result
+# plot_autocorrelation(autocorr_result)
+
+
 def calc_and_plot_caf(sigfile_obj, sample_rate_hz, chunk_size=512, total_samples=0):
     '''
     Calculate the Cyclic Autocorrelation Function for the signal samples
@@ -24,6 +86,7 @@ def calc_and_plot_caf(sigfile_obj, sample_rate_hz, chunk_size=512, total_samples
     :param total_samples:
     :return:
     '''
+
     # alpha is the cycle frequency: it indicates the periodicity in the statistical properties of the process.
     # In other words, it is the frequency at which the statistical characteristics
     # (such as mean, variance, or autocorrelation) of the process repeat.
@@ -42,55 +105,63 @@ def calc_and_plot_caf(sigfile_obj, sample_rate_hz, chunk_size=512, total_samples
     print(f'taus: {taus}')
     num_calculations = len(taus) * len(alphas)
     print(f"main calculation is {num_calculations}  ")
-    plt.figure(figsize=(12, 8))
-    plt.xlabel('Alpha')
-    plt.ylabel('CAF (real)')
+    # plt.figure(figsize=(12, 8))
+    fig, axs = plt.subplots(2, 1, sharex=True, figsize=(12, 8))
 
     n_chunks = 0
     start_idx = 0
     total_samples = 100*chunk_size
-    # CAF_basic_avg = np.zeros(len(taus), dtype=complex)
+    CAF_basic_avg = np.zeros(len(taus), dtype=complex)
     CAF_mags_avg = np.zeros(len(alphas), dtype=complex)
     print(f'CAF_mags_avg shape: {CAF_mags_avg.shape}')
 
     for sample_idx in range(start_idx, total_samples, chunk_size):
         chunk = sigfile_obj.read_samples(start_index=sample_idx, count=chunk_size)
-        # CAF_basic = np.zeros(len(taus), dtype=complex)
-        # for i in range(len(taus)):
-        #     CAF_basic[i] = np.sum(chunk *
-        #                     np.conj(np.roll(chunk, taus[i])) *
-        #                     np.exp(-2j * np.pi * correct_alpha * np.arange(chunk_size)))
 
-        CAF = np.zeros((len(alphas), len(taus)), dtype=complex)
-        for j in range(len(alphas)):
-            for i in range(len(taus)):
-                CAF[j, i] = np.sum(chunk *
-                                   np.conj(np.roll(chunk, taus[i])) *
-                                   np.exp(-2j * np.pi * alphas[j] * np.arange(chunk_size)))
-        CAF_magnitudes = np.average(np.abs(CAF), axis=1) # at each alpha, calc power in the CAF
-        # print(f'CAF_mag shape: {CAF_magnitudes.shape}')
-        CAF_mags_avg += CAF_magnitudes
+        # CAF_2d = np.zeros((len(alphas), len(taus)), dtype=complex)
+        # for j in range(len(alphas)):
+        #     for i in range(len(taus)):
+        #         CAF_2d[j, i] = np.sum(chunk *
+        #                            np.conj(np.roll(chunk, taus[i])) *
+        #                            np.exp(-2j * np.pi * alphas[j] * np.arange(chunk_size)))
+        #
+        # CAF_magnitudes = np.average(np.abs(CAF_2d), axis=1) # at each alpha, calc power in the CAF
+        # CAF_mags_avg += CAF_magnitudes
+
+        # TODO optimize by re-using one of the above calculations, rather than re-calculating
+        # Collect the CAF by tau value, at the "ideal" alpha
+        CAF_basic = np.zeros(len(taus), dtype=complex)
+        for i in range(len(taus)):
+            CAF_basic[i] = np.sum(chunk *
+                            np.conj(np.roll(chunk, taus[i])) *
+                            np.exp(-2j * np.pi * correct_alpha * np.arange(chunk_size)))
+        CAF_basic_avg += np.abs(CAF_basic)
 
         # plt.plot(alphas, CAF_magnitudes,label=f'{n_chunks}')
         n_chunks += 1
 
-    # CAF_avg /= n_chunks
-    CAF_mags_avg /= n_chunks
+    CAF_basic_avg /= n_chunks
+    # CAF_mags_avg /= n_chunks
     max_ele_idx = np.argmax(CAF_mags_avg)
     max_alpha_val = alphas[max_ele_idx]
     print(f"peak alpha val: {max_alpha_val} vs expected: {correct_alpha}")
-    # plt.plot(taus, np.real(CAF_avg))
-    plt.axvline(x=correct_alpha, color='palegreen')
-    plt.axvline(x=max_alpha_val, color='salmon')
 
-    plt.plot(alphas, CAF_mags_avg)
-    plt.grid()
+    subplot_row_idx = 1
 
+    # plt.subplot(2, 1, subplot_row_idx)
+    # plt.xlabel('Alpha')
+    # plt.ylabel('CAF (real)')
+    # plt.axvline(x=correct_alpha, color='palegreen')
+    # plt.axvline(x=max_alpha_val, color='salmon')
+    # plt.plot(alphas, CAF_mags_avg)
+    # # plt.grid()
+    # subplot_row_idx += 1
 
-# plt.plot(alphas, CAF_avg, label='Avg')
-    # plt.xticks(rotation=-45, ha="left")
-    # plt.gca().xaxis.set_major_formatter(StrMethodFormatter('{x:,.2f}')) # 2 decimal places
-    # plt.legend()
+    plt.subplot(2, 1, subplot_row_idx)
+    plt.plot(taus, CAF_basic_avg, label='CAF (avg)')
+    plt.xlabel('Tau')
+    # plt.grid()
+    subplot_row_idx += 1
 
 
 def read_file_meta(sigfile_obj):
@@ -119,6 +190,8 @@ def read_file_meta(sigfile_obj):
             freq_lower_edge_hz = int(annotation[SigMFFile.FLO_KEY])
         if annotation[SigMFFile.FHI_KEY] is not None:
             freq_upper_edge_hz = int(annotation[SigMFFile.FHI_KEY])
+
+    print(f'total_sampels_guess: {total_samples_guess}')
 
     return center_freq_hz, sample_rate_hz, freq_lower_edge_hz, freq_upper_edge_hz, total_samples_guess
 
@@ -190,7 +263,6 @@ def read_and_plot_n_chunks(
     if ctr_freq_hz is not None:
         plt.axvline(x=ctr_freq_hz, color='palegreen')
     plt.plot(freqs, Magm_avg)
-
     plt.ylabel('Magm')
     subplot_row_idx+=1
 
@@ -236,7 +308,12 @@ def main():
     #                        n_chunks=n_chunks_guess)
     # plt.show()
 
-    calc_and_plot_caf(sigfile_obj,sample_rate_hz=sample_rate_hz,chunk_size=chunk_size,total_samples=total_samples)
+    # calc_and_plot_caf(sigfile_obj,sample_rate_hz=sample_rate_hz,chunk_size=chunk_size,total_samples=total_samples)
+
+    autocorr = autocorrelation_sweep(sigfile_obj,start_index=0,total_samples=total_samples)
+    # the first few
+    autocorr[0:5] = 0
+    plot_autocorrelation_mag(autocorr)
     plt.show()
 
 
