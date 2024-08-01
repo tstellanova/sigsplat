@@ -212,7 +212,7 @@ def read_and_plot_n_chunks(
 
 def main():
 
-    parser = argparse.ArgumentParser(description='Grab some GNSS data using hackrf_transfer')
+    parser = argparse.ArgumentParser(description='Analyze a signal file')
     parser.add_argument('src_meta',
                         help="Source sigmf file name eg 'test_sigmf_file' with one of the sigmf file extensions")
     parser.add_argument('--chunk_size',dest='chunk_size', type=int, default=2048,
