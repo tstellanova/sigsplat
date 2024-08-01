@@ -21,9 +21,17 @@ def fibonacci_to_binary_bytes(fib_sequence, byte_length=8):
             binary_data.append(int(bit))
     return np.array(binary_data)
 
+
+
 # Map binary data to BPSK symbols
 def binary_to_bpsk(binary_data):
-    return 2 * binary_data - 1
+    bpsk_signal = np.zeros(len(binary_data))
+    current_phase = 1  # Start with a phase of 0 degrees (represented by +1)
+    for i, bit in enumerate(binary_data):
+        if bit == 0:
+            current_phase = -current_phase  # 180-degree phase shift
+        bpsk_signal[i] = current_phase
+    return bpsk_signal
 
 # Design a low-pass filter
 def butter_lowpass_filter(data, cutoff, fs, order=5):
@@ -35,7 +43,14 @@ def butter_lowpass_filter(data, cutoff, fs, order=5):
 
 # Decode the BPSK signal to binary data
 def bpsk_to_binary(bpsk_signal):
-    return np.where(bpsk_signal > 0, 1, 0)
+    binary_data = np.zeros(len(bpsk_signal), dtype=int)
+    for i in range(1, len(bpsk_signal)):
+        if bpsk_signal[i] != bpsk_signal[i - 1]:
+            binary_data[i] = 0  # Phase change detected
+        else:
+            binary_data[i] = 1  # No phase change
+    binary_data[0] = 1 if bpsk_signal[0] == 1 else 0  # Assume the first bit
+    return binary_data
 
 # Convert binary data back to Fibonacci sequence
 def binary_bytes_to_fibonacci(binary_data, byte_length=8):
@@ -62,18 +77,17 @@ encoded_binary_data = fibonacci_to_binary_bytes(fib_sequence, byte_length)
 bpsk_signal = binary_to_bpsk(encoded_binary_data)
 
 # Apply low-pass filter to keep the signal centered around zero
-filtered_signal = butter_lowpass_filter(bpsk_signal, cutoff, fs)
+# bpsk_modulated = butter_lowpass_filter(bpsk_signal, cutoff, fs)
 
 # Compute FFT
-N = len(filtered_signal)
-bpsk_fft = fft(filtered_signal)
+N = len(bpsk_signal)
+bpsk_fft = fft(bpsk_signal)
 bpsk_fft = np.abs(bpsk_fft[:N//2])  # Take the positive frequency components
 bpsk_fft[0] = 0 # DC filter?
 freqs = np.fft.fftfreq(N, 1/fs)[:N//2]
 
-
 # Decode the BPSK signal back to binary data
-decoded_binary_data = bpsk_to_binary(bpsk_signal)
+decoded_binary_data = bpsk_to_binary(bpsk_signal) # bpsk_signal)
 
 # Convert binary data back to Fibonacci sequence
 # decoded_fib_sequence = binary_bytes_to_fibonacci(decoded_binary_data, byte_length)
@@ -82,31 +96,39 @@ decoded_fib_sequence = binary_bytes_to_fibonacci(decoded_binary_data, byte_lengt
 # Plot the signals
 plt.figure(figsize=(12, 8))
 
-plt.subplot(5, 1, 1)
+plt.subplot(6, 1, 1)
 plt.title('Original Fibonacci Sequence')
 plt.stem(fib_sequence)
 
-plt.subplot(5, 1, 2)
+plt.subplot(6, 1, 2)
 plt.title('Encoded Binary Data')
 plt.plot(encoded_binary_data)
 plt.ylim([-0.2, 1.2])
 
-plt.subplot(5, 1, 3)
-plt.title('Filtered BPSK Signal')
-plt.plot(filtered_signal)
 
-plt.subplot(5, 1, 4)
+
+plt.subplot(6, 1, 3)
+plt.title('BPSK Signal')
+plt.plot(bpsk_signal)
+plt.grid(True)
+plt.ylim([-1.2, 1.2])
+
+# plt.subplot(6, 1, 4)
+# plt.title('Modulated BPSK Signal')
+# plt.plot(bpsk_modulated)
+# plt.grid(True)
+# plt.ylim([-1.2, 1.2])
+
+plt.subplot(6, 1, 5)
 plt.title('Decoded Binary Data')
-# plt.stem(decoded_binary_data)
 plt.plot(decoded_binary_data)
 plt.ylim([-0.2, 1.2])
 
-plt.subplot(5, 1, 5)
+plt.subplot(6, 1, 6)
 plt.title('Decoded Fibonacci Sequence')
 plt.stem(decoded_fib_sequence)
 
 plt.tight_layout()
-# plt.show()
 
 plt.figure(figsize=(12, 8))
 plt.plot(freqs, bpsk_fft)
@@ -114,6 +136,7 @@ plt.title("Frequency Spectrum of BPSK Modulated Signal")
 plt.xlabel("Frequency [Hz]")
 plt.ylabel("Magnitude")
 plt.grid(True)
+
 plt.show()
 
 
