@@ -80,7 +80,7 @@ def main():
                         help="Sampling frequency (Hz)")
     parser.add_argument('--fc',dest='carrier_freq_hz', type=float, default=1E2,
                         help="Carrier / center frequency (Hz)")
-    parser.add_argument('--tbit',dest='bit_period', type=float, default=0.01,
+    parser.add_argument('--tbit',dest='bit_period', type=float,
                         help="Seconds per bit (bit period)")
     parser.add_argument('--seq_len',dest='seq_len', type=int, default=14,
                         help="Length of input sequence")
@@ -91,10 +91,13 @@ def main():
 
     sample_freq_hz = args.sample_freq_hz
     carrier_freq_hz = args.carrier_freq_hz
-    bit_period_sec = args.bit_period
+    bit_period_sec = 2/(sample_freq_hz)
+    if args.bit_period is not None:
+        bit_period_sec = args.bit_period
     seq_len = args.seq_len
     seq_repeats = args.seq_repeats
     samples_per_bit = int(np.ceil(sample_freq_hz * bit_period_sec))
+    print(f"fs {sample_freq_hz} bit_period_sec {bit_period_sec} samples_per_bit {samples_per_bit}")
 
     input_sequence = generate_fibonacci_sequence(seq_len, repeats=seq_repeats)
     in_bit_stream = input_sequence_to_bitstream(input_sequence)
@@ -119,18 +122,19 @@ def main():
     plt.title('In Bitstream')
     plt.plot(in_bit_stream)
     plt.grid(True)
-    plt.ylim([-0.2, 1.2])
+    # plt.ylim([-0.2, 1.2])
 
     plt.subplot(5, 1, 3)
     plt.title('BPSK Signal')
     plt.plot(bpsk_signal)
     plt.grid(True)
-    plt.ylim([-1.2, 1.2])
+    # plt.ylim([-1.2, 1.2])
 
     plt.subplot(5, 1, 4)
     plt.title('Demod Bitstream')
     plt.plot(demodulated_bitstream)
-    plt.ylim([-0.2, 1.2])
+    plt.grid(True)
+    # plt.ylim([-0.2, 1.2])
 
     plt.subplot(5, 1, 5)
     plt.title('Output Sequence')
