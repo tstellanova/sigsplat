@@ -5,7 +5,8 @@ Visualizing how BPSK is encoded and decoded
 import numpy as np
 import matplotlib.pyplot as plt
 import argparse
-
+from scipy.fftpack import fft
+from scipy.signal import find_peaks
 
 # Generate the Fibonacci sequence up to a certain length
 def generate_fibonacci_sequence(n, repeats=1):
@@ -105,49 +106,71 @@ def main():
     # Convert bitstream to BPSK symbols, mixing with carrier
     bpsk_signal, sample_times = bpsk_modulate(
         in_bit_stream,fc=carrier_freq_hz,fs=sample_freq_hz,bit_period_sec=bit_period_sec,samples_per_bit=samples_per_bit)
+
+
+    # Compute FFT on "transmitted" BPSK signal
+    N = len(bpsk_signal)
+    bpsk_fft = fft(bpsk_signal)
+    bpsk_fft = np.abs(bpsk_fft[:N//2])  # Take the positive frequency components
+    bpsk_psd = bpsk_fft**2
+
+    fft_freqs = np.fft.fftfreq(N, 1/sample_freq_hz)[:N//2]
+
+    # Add some noise to original signal
+    noisy_signal = bpsk_signal + np.random.normal(0,0.1, len(bpsk_signal))
+
     # Extract bitstream from mixed carrier-BPSK symbols
     demodulated_bitstream = bpsk_demodulate(
-        bpsk_signal,fc=carrier_freq_hz,fs=sample_freq_hz,samples_per_bit=samples_per_bit)
+        noisy_signal,fc=carrier_freq_hz,fs=sample_freq_hz,samples_per_bit=samples_per_bit)
 
     out_sequence = bitstream_to_fibonacci(demodulated_bitstream)
 
+
     # Plot the signals
     plt.figure(figsize=(12, 8))
-
-    plt.subplot(5, 1, 1)
+    total_subplots = 6
+    plt.subplot(total_subplots, 1, 1)
     plt.title('Original Sequence Values')
     plt.stem(input_sequence)
 
-    plt.subplot(5, 1, 2)
+    plt.subplot(total_subplots, 1, 2)
     plt.title('In Bitstream')
     plt.plot(in_bit_stream)
     plt.grid(True)
     # plt.ylim([-0.2, 1.2])
 
-    plt.subplot(5, 1, 3)
+    plt.subplot(total_subplots, 1, 3)
     plt.title('BPSK Signal')
     plt.plot(bpsk_signal)
     plt.grid(True)
     # plt.ylim([-1.2, 1.2])
 
-    plt.subplot(5, 1, 4)
+    plt.subplot(total_subplots, 1, 4)
+    plt.title('Noisy Signal')
+    plt.plot(noisy_signal)
+    plt.grid(True)
+
+
+    plt.subplot(total_subplots, 1, 5)
     plt.title('Demod Bitstream')
     plt.plot(demodulated_bitstream)
     plt.grid(True)
     # plt.ylim([-0.2, 1.2])
 
-    plt.subplot(5, 1, 5)
+    plt.subplot(total_subplots, 1, 6)
     plt.title('Output Sequence')
     plt.stem(out_sequence)
 
     plt.tight_layout()
 
-    # plt.figure(figsize=(12, 8))
-    # plt.plot(freqs, bpsk_fft)
-    # plt.title("Frequency Spectrum of BPSK Modulated Signal")
-    # plt.xlabel("Frequency [Hz]")
-    # plt.ylabel("Magnitude")
-    # plt.grid(True)
+    plt.figure(figsize=(12, 8))
+    plt.axvline(x = carrier_freq_hz, color = 'y', label = 'carrier')
+    plt.plot(fft_freqs, bpsk_psd, color='g')
+    # # plt.plot(fft_freqs, filtered_psd, color='r')
+    plt.title("Power Spectrum: BPSK Modulated Signal")
+    plt.xlabel("Frequency [Hz]")
+    plt.ylabel("Power")
+    plt.grid(True)
 
     plt.show()
 
