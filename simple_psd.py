@@ -103,6 +103,9 @@ def read_and_plot_n_chunks(
     PSD_avg[0:5] = median_value
     PSD_avg[len(PSD_avg) - 1] = median_value
 
+    max_psd_idx = np.argmax(PSD_avg)
+    psd_max_freq = freqs[max_psd_idx]
+
     if title is None:
         title =  "Sigfile"
     # fig = plt.figure(figsize=(12, 8))
@@ -119,12 +122,13 @@ def read_and_plot_n_chunks(
     plt.ylabel('Full PSD (dB)')
     plt.grid(True)
     if ctr_freq_hz is not None:
-        plt.axvline(x=ctr_freq_hz, color='red')
+        plt.axvline(x=ctr_freq_hz, color='lightskyblue')
     if focus_f_low is not None and focus_f_high is not None:
         plt.axvline(x=focus_f_low, color='palegreen')
         plt.axvline(x=focus_f_high, color='palegreen')
 
     plt.plot(freqs, PSD_avg)
+    plt.axvline(x=psd_max_freq, color='violet', label=f"{psd_max_freq}")
 
     if focus_start_idx is not None:
         subplot_row_idx+=1
@@ -133,8 +137,9 @@ def read_and_plot_n_chunks(
         if focus_label is not None:
             ax.title.set_text(focus_label)
         plt.grid(True)
-        plt.axvline(x=ctr_freq_hz, color='red',label=f"{ctr_freq_hz}")
+        plt.axvline(x=ctr_freq_hz, color='lightskyblue',label=f"{ctr_freq_hz/1E6:0.4f}")
         plt.plot(freqs[focus_start_idx:focus_stop_idx], PSD_avg[focus_start_idx:focus_stop_idx])
+        plt.axvline(x=psd_max_freq, color='violet', label=f"{psd_max_freq/1E6:0.4f}")
 
     plt.legend()
     plt.show()

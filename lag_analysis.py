@@ -1,4 +1,4 @@
-gi#!/usr/bin/env python
+#!/usr/bin/env python
 """
 Read samples from sigmf file and analyze for autocorrelation
 """
