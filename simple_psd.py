@@ -124,7 +124,7 @@ def read_and_plot_n_chunks(
 
     subplot_row_idx+=1
     plt.subplot(subplot_rows, 1, subplot_row_idx)
-    plt.ylabel('FFT')
+    plt.ylabel('FFT (count)')
     plt.grid(True)
     if start_idx is not None:
         plt.plot(freqs[start_idx:stop_idx], FFT_avg[start_idx:stop_idx])
