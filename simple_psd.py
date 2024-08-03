@@ -93,19 +93,10 @@ def read_and_plot_n_chunks(
         n_chunks_read += 1
 
     assert n_chunks_read == n_chunks
-    ctr_freq_idx = len(freqs) // 2
     print(f"perform averaging over {n_chunks} chunks")
     PSD_avg /= n_chunks
-    # PSD_avg[0] = PSD_avg[1] # ignore cutoff noise
     FFT_avg /= n_chunks
-    # FFT_avg[0] = FFT_avg[1] # ignore cutoff noise
 
-    # GOES-18:
-    # Center: 1694.1 MHz
-    # Bandwidth: 1206000
-    # Half bandwidth : 603000
-    # Upper: 1694703000  169464
-    # Lower: 1693497000
 
     if title is None:
         title =  "Sigfile"
