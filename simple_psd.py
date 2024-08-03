@@ -37,6 +37,7 @@ def read_file_meta(sigfile_obj):
 
     total_samples_guess = sample_rate_hz
 
+    focus_label = None
     first_sample_annotations = sigfile_obj.get_annotations(0)
     for annotation in first_sample_annotations:
         if annotation[SigMFFile.LENGTH_INDEX_KEY] is not None:
@@ -45,8 +46,10 @@ def read_file_meta(sigfile_obj):
             freq_lower_edge_hz = int(annotation[SigMFFile.FLO_KEY])
         if annotation[SigMFFile.FHI_KEY] is not None:
             freq_upper_edge_hz = int(annotation[SigMFFile.FHI_KEY])
+        if annotation[SigMFFile.LABEL_KEY] is not None:
+            focus_label = annotation[SigMFFile.LABEL_KEY]
 
-    return center_freq_hz, sample_rate_hz, freq_lower_edge_hz, freq_upper_edge_hz, total_samples_guess
+    return center_freq_hz, sample_rate_hz, freq_lower_edge_hz, freq_upper_edge_hz, total_samples_guess, focus_label
 
 def read_and_plot_n_chunks(
         sigfile_obj,
@@ -58,20 +61,21 @@ def read_and_plot_n_chunks(
         chunk_size=64,
         n_chunks=3,
         focus_f_low=None,
-        focus_f_high=None):
+        focus_f_high=None,
+        focus_label=None):
 
     n_chunks_read = 0
     end_idx_guess = sample_start_idx + chunk_size*n_chunks
     freqs = sorted(freqs)
 
     if focus_f_low is not None and focus_f_high is not None:
-        start_idx = np.searchsorted(freqs, focus_f_low)
-        stop_idx = np.searchsorted(freqs, focus_f_high)
-        print(f"start_idx: {start_idx} stop_idx: {stop_idx}")
+        focus_start_idx = np.searchsorted(freqs, focus_f_low)
+        focus_stop_idx = np.searchsorted(freqs, focus_f_high)
+        print(f"focus_start_idx: {focus_start_idx} focus_stop_idx: {focus_stop_idx}")
 
     power_normalizer = chunk_size * sampling_rate_hz
     PSD_avg = np.zeros(chunk_size, dtype=float)
-    FFT_avg = np.zeros(chunk_size, dtype=float)
+
     for sample_idx in range(sample_start_idx, end_idx_guess, chunk_size):
         chunk = sigfile_obj.read_samples(start_index=sample_idx, count=chunk_size)
         # apply a Hamming window function to taper ends of signal to zero
@@ -80,7 +84,6 @@ def read_and_plot_n_chunks(
         chunk_fft = fft(chunk)
         # get magnitude (convert complex to real)
         chunk_fft_mag = np.abs(chunk_fft)
-        FFT_avg += chunk_fft_mag
 
         # chunk_fft = np.abs(chunk_fft[:chunk_size//2])  # Take the positive frequency components only
         chunk_power = chunk_fft_mag**2
@@ -93,23 +96,27 @@ def read_and_plot_n_chunks(
         n_chunks_read += 1
 
     assert n_chunks_read == n_chunks
-    print(f"perform averaging over {n_chunks} chunks")
+    print(f"Averaging over {n_chunks} chunks")
     PSD_avg /= n_chunks
-    FFT_avg /= n_chunks
-
+    # clamp endpoints
+    median_value = np.median(PSD_avg)
+    PSD_avg[0:5] = median_value
+    PSD_avg[len(PSD_avg) - 1] = median_value
 
     if title is None:
         title =  "Sigfile"
     # fig = plt.figure(figsize=(12, 8))
     subplot_rows = 2
-    fig, axs = plt.subplots(subplot_rows, 1, sharex=True, figsize=(12, 8))
+    subplot_row_idx = 0
+    # fig, axs = plt.subplots(subplot_rows, 1, sharex=True, figsize=(12, 8))
+    fig, axs = plt.subplots(subplot_rows, 1,  figsize=(12, 8))
     fig.suptitle(title)
-    fig.subplots_adjust(hspace=0) # remove vspace between plots
+    # fig.subplots_adjust(hspace=0) # remove vspace between plots
     plt.xlabel('Frequency (Hz)')
 
-    subplot_row_idx = 1
+    subplot_row_idx += 1
     plt.subplot(subplot_rows, 1, subplot_row_idx)
-    plt.ylabel('PSD (dB)')
+    plt.ylabel('Full PSD (dB)')
     plt.grid(True)
     if ctr_freq_hz is not None:
         plt.axvline(x=ctr_freq_hz, color='red')
@@ -117,21 +124,19 @@ def read_and_plot_n_chunks(
         plt.axvline(x=focus_f_low, color='palegreen')
         plt.axvline(x=focus_f_high, color='palegreen')
 
-    if start_idx is not None:
-        plt.plot(freqs[start_idx:stop_idx], PSD_avg[start_idx:stop_idx])
-    else:
-        plt.plot(freqs, PSD_avg)
+    plt.plot(freqs, PSD_avg)
 
-    subplot_row_idx+=1
-    plt.subplot(subplot_rows, 1, subplot_row_idx)
-    plt.ylabel('FFT (count)')
-    plt.grid(True)
-    if start_idx is not None:
-        plt.plot(freqs[start_idx:stop_idx], FFT_avg[start_idx:stop_idx])
-    else:
-        plt.plot(freqs, FFT_avg)
-    subplot_row_idx+=1
+    if focus_start_idx is not None:
+        subplot_row_idx+=1
+        ax = plt.subplot(subplot_rows, 1, subplot_row_idx)
+        plt.ylabel('PSD (dB)')
+        if focus_label is not None:
+            ax.title.set_text(focus_label)
+        plt.grid(True)
+        plt.axvline(x=ctr_freq_hz, color='red',label=f"{ctr_freq_hz}")
+        plt.plot(freqs[focus_start_idx:focus_stop_idx], PSD_avg[focus_start_idx:focus_stop_idx])
 
+    plt.legend()
     plt.show()
 
 def main():
@@ -149,7 +154,8 @@ def main():
     print(f'loading file info: {base_data_name}')
     sigfile_obj = sigmffile.fromfile(base_data_name)
 
-    center_freq_hz, sample_rate_hz, freq_lower_edge_hz, freq_upper_edge_hz, total_samples = read_file_meta(sigfile_obj)
+    center_freq_hz, sample_rate_hz, freq_lower_edge_hz, freq_upper_edge_hz, total_samples, focus_label\
+        = read_file_meta(sigfile_obj)
 
     print(f" center_freq_hz, sample_rate_hz, freq_lower_edge_hz, freq_upper_edge_hz, total_samples:\n ",
           center_freq_hz, sample_rate_hz, freq_lower_edge_hz, freq_upper_edge_hz, total_samples)
@@ -180,7 +186,8 @@ def main():
                            ctr_freq_hz=center_freq_hz,
                            n_chunks=n_chunks_guess,
                            focus_f_low=freq_lower_edge_hz,
-                           focus_f_high=freq_upper_edge_hz
+                           focus_f_high=freq_upper_edge_hz,
+                           focus_label=focus_label
                            )
     plt.show()
 
