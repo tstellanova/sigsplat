@@ -19,10 +19,6 @@ from sigmf import sigmffile, SigMFFile
 matplotlib.use('qtagg')
 
 
-def replace_zeroes(data):
-    min_nonzero = np.min(data[np.nonzero(data)])
-    data[data == 0] = min_nonzero
-    return data
 
 def normalize_2d(matrix):
     norm = np.linalg.norm(matrix)
@@ -73,10 +69,10 @@ def wavelet_analysis(sigfile_obj, fs, fc, sample_start_idx=0,
     fs (float): Sampling rate.
     fc (float): Center frequency.
     chunk_size (int): Number of samples per chunk.
-    frequencies (array-like): Frequencies at which to calculate the PSD.
 
     Returns:
     psd_values (list of np.ndarray): List of PSD arrays for each chunk.
+    frequences:  (array-like): Frequencies at which the PSD was calculated
     """
     sample_spacing_hz = fs / chunk_size
     freqs = np.arange(start=sample_spacing_hz,stop=fs+sample_spacing_hz,step=sample_spacing_hz)
@@ -88,14 +84,15 @@ def wavelet_analysis(sigfile_obj, fs, fc, sample_start_idx=0,
     assert np.min(scales) >= min_scale
 
     sample_period_sec = 1/fs
-    PSD_avg = np.zeros( (chunk_size, len(freqs)), dtype=float)
     psd_values = []
 
+    n_chunks_read = 0
     end_idx_guess = sample_start_idx + chunk_size*n_chunks
     for sample_idx in range(sample_start_idx, end_idx_guess, chunk_size):
         chunk = sigfile_obj.read_samples(start_index=sample_idx, count=chunk_size)
         if len(chunk) == 0:
             break
+        n_chunks_read += 1
 
         # Perform Continuous Wavelet Transform
         coefs, ret_freqs = pywt.cwt(chunk, scales, 'cmor', sampling_period=1/fs)
@@ -103,9 +100,7 @@ def wavelet_analysis(sigfile_obj, fs, fc, sample_start_idx=0,
         # Calculate PSD (Power Spectral Density)
         # log10 of 0 is NaN
         psd = np.abs(coefs)**2 + np.finfo(float).eps
-        # psd = replace_zeroes(psd)
         psd_db = 10 * np.log10(psd)
-        # PSD_avg += np.array(psd_db)
         psd_values.append(psd_db)
         if sample_idx == 0:
             print(f"ret_freqs {np.min(ret_freqs)}..{np.max(ret_freqs)}")
@@ -120,12 +115,16 @@ def wavelet_analysis(sigfile_obj, fs, fc, sample_start_idx=0,
             plt.colorbar(label='PSD')
             plt.xlabel('Time (sec)')
             plt.ylabel('Frequency (Hz)')
-            # plt.legend()
+            plt.legend()
 
             plt.figure(figsize=(16, 8))
-            plt.plot(freqs,np.mean(psd_db, axis=0))
+            # The first axis of coefs corresponds to the scales
+            lucky_charms = np.median(psd_db, axis=0)
+            print(f"lucky {np.min(lucky_charms)}..{np.max(lucky_charms)}")
+            plt.plot(freqs, lucky_charms)
             plt.xlabel('Frequency (Hz)')
             plt.ylabel('Avg PSD (dB)')
+            # plt.axvline(x=fc, color='lightskyblue',label=f"{fc:0.4f}")
             plt.show()
             break
 
