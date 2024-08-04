@@ -4,27 +4,19 @@ Perform some wavelet analysis on sigmf data files
 """
 
 import argparse
-import time
+# import time
 
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 import pywt
-import sigmf
+# import sigmf
 from sigmf import sigmffile, SigMFFile
 # from scipy.signal import welch
-from matplotlib.colors import Normalize, LogNorm, NoNorm
-from scipy import signal, ndimage
+# from matplotlib.colors import Normalize, LogNorm, NoNorm
+# from scipy import signal, ndimage
 
 matplotlib.use('qtagg')
-
-
-import numpy as np
-import matplotlib.pyplot as plt
-
-
-import numpy as np
-import pywt
 
 
 def replace_zeroes(data):
@@ -72,7 +64,7 @@ def read_file_meta(sigfile_obj):
 
 
 def wavelet_analysis(sigfile_obj, fs, fc, sample_start_idx=0,
-                      chunk_size=512, n_chunks=3, frequencies=[100, 200]):
+                      chunk_size=512, n_chunks=3):
     """
     Perform wavelet analysis on chunks of complex chunk.
 
@@ -86,16 +78,17 @@ def wavelet_analysis(sigfile_obj, fs, fc, sample_start_idx=0,
     Returns:
     psd_values (list of np.ndarray): List of PSD arrays for each chunk.
     """
+    sample_spacing_hz = fs / chunk_size
+    freqs = np.arange(start=sample_spacing_hz,stop=fs+sample_spacing_hz,step=sample_spacing_hz)
+    print(f"freqs: {freqs.shape}  {np.min(freqs)}..{np.max(freqs)}")
+
     min_scale = 1e-3
-    scales = fs / (frequencies * 2 * np.pi)
-    valid_indices = scales >= min_scale
-    valid_scales = scales[valid_indices]
-    valid_frequencies = frequencies[valid_indices]
-    print(f"valid_frequencies: {valid_frequencies.shape} ")
-    print(f"valid_scales: {valid_scales.shape}")
+    # scales = fs / (freqs * 2 * np.pi)
+    scales = pywt.frequency2scale('cmor', freqs/fs)
+    assert np.min(scales) >= min_scale
 
     sample_period_sec = 1/fs
-    PSD_avg = np.zeros( (chunk_size, len(valid_frequencies)), dtype=float)
+    PSD_avg = np.zeros( (chunk_size, len(freqs)), dtype=float)
     psd_values = []
 
     end_idx_guess = sample_start_idx + chunk_size*n_chunks
@@ -105,44 +98,45 @@ def wavelet_analysis(sigfile_obj, fs, fc, sample_start_idx=0,
             break
 
         # Perform Continuous Wavelet Transform
-        coefs, freqs = pywt.cwt(chunk, valid_scales, 'cmor', sampling_period=1/fs)
+        coefs, ret_freqs = pywt.cwt(chunk, scales, 'cmor', sampling_period=1/fs)
 
         # Calculate PSD (Power Spectral Density)
-        # sum_samples = np.sum(coefs, axis=1)
-        # if sample_idx == 0:
-        #     print(f"shape coefs: {coefs.shape} freqs : {freqs.shape} sum_samples: {sum_samples.shape}")
-
-        psd = np.abs(coefs)**2
-        print(f"min psd: {np.min(psd)}")
         # log10 of 0 is NaN
-        psd = replace_zeroes(psd)
+        psd = np.abs(coefs)**2 + np.finfo(float).eps
+        # psd = replace_zeroes(psd)
         psd_db = 10 * np.log10(psd)
         # PSD_avg += np.array(psd_db)
         psd_values.append(psd_db)
         if sample_idx == 0:
+            print(f"ret_freqs {np.min(ret_freqs)}..{np.max(ret_freqs)}")
             print(f"psd: {psd.shape}")
             plt.figure(figsize=(16, 8))
-            # time = np.arange(num_chunks) * (chunk_size / fs)
             times = np.arange(0, chunk_size*sample_period_sec, sample_period_sec)
-            print(f"times: {times.shape} freqs: {freqs.shape} ")
+            print(f"times: {times.shape} {np.min(times)} .. {np.max(times)}")
+            print(f"freqs: {freqs.shape} {np.min(freqs)}..{np.max(freqs)}")
+            print(f"ret_freqs: {ret_freqs.shape} {np.min(ret_freqs)}..{np.max(ret_freqs)}")
 
-            # norm_psd = normalize_2d(psd)
             plt.pcolormesh(times, freqs, psd_db, shading='auto', cmap='jet')
             plt.colorbar(label='PSD')
-            # plt.matshow(psd_db)
-            plt.xlabel('Time')
+            plt.xlabel('Time (sec)')
             plt.ylabel('Frequency (Hz)')
             # plt.legend()
+
+            plt.figure(figsize=(16, 8))
+            plt.plot(freqs,np.mean(psd_db, axis=0))
+            plt.xlabel('Frequency (Hz)')
+            plt.ylabel('Avg PSD (dB)')
             plt.show()
+            break
 
 
     # psd_values = np.array(psd_values)
     print(f"psd_values: {len(psd_values)}")
-    return psd_values, valid_frequencies
+    return psd_values, freqs
 
 def plot_psd(psd_values, frequencies, fs, chunk_size):
     """
-    Plot the PSD output from wavelet_analysis.
+    Plot the PSD output from wavelet analysis.
 
     Parameters:
     psd_values (list of np.ndarray): List of PSD arrays for each chunk.
@@ -190,31 +184,13 @@ def main():
 
     center_freq_hz, sample_rate_hz, freq_lower_edge_hz, freq_upper_edge_hz, total_samples, focus_label \
         = read_file_meta(sigfile_obj)
-
     print(f"center: {center_freq_hz} samp rate: {sample_rate_hz}")
-    sampling_period_sec = 1/sample_rate_hz
-    #total_duration = total_samples * sampling_period_sec
-    total_duration = 0.1 # second
-    total_samples = int(total_duration / sampling_period_sec)
-    # sample_times = np.linspace(0, total_duration, total_samples)
 
-    chunk_size = 512
-    half_bandwidth = sample_rate_hz / 2
-    # print(f"half_bandwidth: {half_bandwidth}")
-    # foi = np.linspace(center_freq_hz - half_bandwidth, center_freq_hz + half_bandwidth,num=chunk_size )
-
-    # sample_spacing_sec = 1 / sample_rate_hz
-    # foi = np.fft.fftfreq(chunk_size, sample_spacing_sec)
-    sample_spacing_hz = sample_rate_hz / chunk_size
-    foi = np.arange(start=sample_spacing_hz,stop=sample_rate_hz,step=sample_spacing_hz)
-    # foi = np.linspace(-half_bandwidth, half_bandwidth, num=chunk_size )
-    # foi = np.linspace(sample_spacing_hz, sample_rate_hz, num=chunk_size )
-    print(f"foi: {foi.shape}  {np.min(foi)}..{np.max(foi)}")
-
+    chunk_size = 1024
     n_chunks_guess =  total_samples // chunk_size
     print(f"n chunks: {n_chunks_guess}")
     psd_values, valid_frequencies  = wavelet_analysis(
-        sigfile_obj, fs=sample_rate_hz, fc=center_freq_hz, chunk_size=chunk_size, n_chunks=n_chunks_guess, frequencies=foi)
+        sigfile_obj, fs=sample_rate_hz, fc=center_freq_hz, chunk_size=chunk_size, n_chunks=n_chunks_guess)
     # plot_psd(psd_values, valid_frequencies, sample_rate_hz, chunk_size)
 
 
