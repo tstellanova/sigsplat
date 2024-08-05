@@ -35,18 +35,18 @@ full_screen_dims=(3456 / my_dpi, 2234 / my_dpi)
 #obs.plot_spectrum()
 #plt.xticks(rotation=-45, ha="left")
 #plt.title("full spectrum")
-#plt.savefig('spectrum.png')
+#plt.savefig('./img/spectrum.png')
 
-# plt.figure(figsize=full_screen_dims, dpi=my_dpi)
-# obs.plot_waterfall(f_start=8420.193, f_stop=8420.24, logged=True)
-# plt.title("waterfall")
-# plt.savefig('waterfall.png')
+plt.figure(figsize=full_screen_dims, dpi=my_dpi)
+obs.plot_waterfall(f_start=8420.193, f_stop=8420.24, logged=True)
+plt.title("waterfall")
+plt.savefig('./img/waterfall.png')
 
 plt.figure(figsize=full_screen_dims)
 plt.xticks(rotation=-45, ha="left")
 obs.plot_spectrum(f_start=8420.18, f_stop=8420.26, logged=True) #from sideband to sideband
 plt.title("full signal")
-plt.savefig('full_sig.png')
+plt.savefig('./img/full_sig.png')
 
 # todo measure full range
 (plot_f, plot_efields) = obs.grab_data(f_start=8402.0, f_stop=8588.0)
@@ -86,7 +86,7 @@ plt.xticks(rotation=-45, ha="left")
 obs.plot_spectrum(f_start=8420.238, f_stop=8420.24) # right sideband
 plt.title("right sideband")
 plt.tight_layout()
-plt.savefig('bands.png')
+plt.savefig('./img/bands.png')
 
 # plt.figure(figsize=full_screen_dims)
 # plt.xticks(rotation=-45, ha="left")
