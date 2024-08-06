@@ -52,6 +52,34 @@ def read_file_meta(sigfile_obj):
 
     return center_freq_hz, sample_rate_hz, freq_lower_edge_hz, freq_upper_edge_hz, total_samples_guess, focus_label
 
+
+def circular_autocorrelation(chunk):
+    N = len(chunk)
+    chunk_fft = np.fft.fft(chunk, N)
+    corr = np.fft.ifft(chunk_fft * np.conj(chunk_fft), N)
+    return corr/N
+
+def autocorrelation_fft(signal):
+    """
+    Compute the autocorrelation of a signal using FFT and IFFT.
+    """
+    n = len(signal)
+    signal_fft = np.fft.fft(signal, n=n*2)
+    power_spectrum = signal_fft * np.conj(signal_fft)
+    result = np.fft.ifft(power_spectrum)
+    result = np.real(result[:n])  # Keep only the non-negative lags and take the real part
+    return result / np.arange(n, 0, -1)  # Normalize
+
+def slow_correlation(chunk):
+    result = np.correlate(chunk, chunk, mode='full')
+    return result[result.size // 2:]
+
+# def slow_correlation(chunk):
+#     N = len(chunk)
+#     corr = np.correlate(chunk,chunk,mode='full')/N
+#     corr = corr[corr.size//2:]
+#     return corr
+
 def read_and_plot_n_chunks(
         sigfile_obj,
         title=None,
@@ -67,18 +95,19 @@ def read_and_plot_n_chunks(
 
     n_chunks_read = 0
     end_idx_guess = sample_start_idx + chunk_size*n_chunks
-    freqs = sorted(freqs)
+    # freqs = sorted(freqs)
 
-    if focus_f_low is not None and focus_f_high is not None:
-        focus_start_idx = np.searchsorted(freqs, focus_f_low)
-        focus_stop_idx = np.searchsorted(freqs, focus_f_high)
+    # if focus_f_low is not None and focus_f_high is not None:
+    #     focus_start_idx = np.searchsorted(freqs, focus_f_low)
+    #     focus_stop_idx = np.searchsorted(freqs, focus_f_high)
         # print(f"focus_start_idx: {focus_start_idx} focus_stop_idx: {focus_stop_idx}")
 
     sample_period_ms = (1/sampling_rate_hz)*1E3
     # sample_times_ms = np.arange(0, sample_period_ms * chunk_size, sample_period_ms)
     sample_times_ms = np.linspace(0, sample_period_ms * chunk_size, num=chunk_size)
-    correlation_avg = np.zeros_like(sample_times_ms, dtype=float)
-    print(f"correlation_avg shape: {correlation_avg.shape}")
+    correlation_avg_I = np.zeros_like(sample_times_ms, dtype=float)
+    correlation_avg_Q = np.zeros_like(sample_times_ms, dtype=float)
+    print(f"correlation_avg shape: {correlation_avg_I.shape}")
 
 # typically at the beginning of every cycle theres some spurious high-match correlation--skip it
     initial_skip_inset = chunk_size//100
@@ -87,18 +116,25 @@ def read_and_plot_n_chunks(
         chunk = sigfile_obj.read_samples(start_index=sample_idx, count=chunk_size)
         # chunk = chunk * np.hamming(len(chunk))
         print(f"correlate {n_chunks_read}")
-        corr = np.correlate(chunk,chunk,mode='full')/chunk.size
-        corr = corr[corr.size//2:]
-        corr[:initial_skip_inset] = 0
-        print(f"correlation_avg shape: {correlation_avg.shape} corr shape: {corr.shape}")
-        correlation_avg += np.abs(corr)
+        corr = circular_autocorrelation(chunk)
+        # corr = autocorrelation_fft(chunk)
+        # corr = np.correlate(chunk,chunk,mode='full')/chunk.size
+        # corr = corr[corr.size//2:]
+        # corr = slow_correlation(chunk)/chunk.size
+        corr[:initial_skip_inset] = np.median(corr)
+        corr[-initial_skip_inset:] = np.median(corr)
+        print(f"correlation_avg shape: {correlation_avg_I.shape} corr shape: {corr.shape}")
+        # correlation_avg += np.abs(corr)
+        correlation_avg_I += np.real(corr)
+        correlation_avg_Q += np.abs(np.imag(corr))
         n_chunks_read += 1
 
-    assert n_chunks_read == n_chunks
-    correlation_avg /= n_chunks_read
+    # assert n_chunks_read == n_chunks
+    correlation_avg_I /= n_chunks_read
+    correlation_avg_Q /= n_chunks_read
     # select the peak with a minimum prominence above immediate surroundings
     print(f"finding peaks...")
-    peaks, properties = signal.find_peaks(correlation_avg, prominence=0.01)
+    peaks, properties = signal.find_peaks(correlation_avg_I, prominence=0.01)
     peak_sample_time_ms = None
     # print(f"peaks: {peaks} properties: {properties}")
     if properties and properties['prominences'] is not None:
@@ -112,16 +148,30 @@ def read_and_plot_n_chunks(
             peak_cycl_freq = 1E3/(peak_sample_time_ms)
             print(f"max prominence is {max_prom_val:0.6f} at {peak_sample_time_ms} ms ({peak_cycl_freq} Hz) ")
 
-    plt.figure(figsize=(12, 8))
-    plt.plot(sample_times_ms, correlation_avg)
+    # plt.figure(figsize=(12, 8))
+    subplot_rows = 2
+    subplot_row_idx = 0
+    fig, axs = plt.subplots(subplot_rows, 1,  figsize=(12, 8))
+    if title is None:
+        title =  "Sigfile"
+    fig.suptitle(title)
+    plt.subplot(subplot_rows, 1, (subplot_row_idx:=subplot_row_idx+1))
+    plt.plot(sample_times_ms, correlation_avg_I)
     if peak_sample_time_ms is not None:
         # plt.plot(sample_times_ms[peaks], correlation_avg[peaks], "x")
-        plt.plot(peak_sample_time_ms,correlation_avg[max_peak_sample_num],"x")
+        plt.plot(peak_sample_time_ms,correlation_avg_I[max_peak_sample_num],"x")
         # plt.axvline(peak_sample_time_ms, color = "C1")
-        plt.grid(True)
+    plt.grid(True)
     plt.xlabel("Time (ms)")
-    plt.ylabel("Avg correlation (mag)")
-    plt.title("Blind Autocorrelation")
+    plt.ylabel("Avg correlation (I)")
+
+    plt.subplot(subplot_rows, 1, (subplot_row_idx:=subplot_row_idx+1))
+    plt.plot(sample_times_ms, correlation_avg_Q)
+    plt.grid(True)
+    plt.ylabel("Avg correlation (Q)")
+
+
+    # plt.title("Blind Autocorrelation")
     plt.show()
 
 
@@ -152,12 +202,10 @@ def main():
     # 4000 samples at 4 MHz sampling rate
 
     chunk_size = 8192
-    sample_spacing_sec = 1/sample_rate_hz
-    print(f"sample_spacing_sec: {sample_spacing_sec:0.6f}")
 
     min_lag_ms = args.min_lag_ms
     if min_lag_ms is not None:
-        n_window_samples = (2 * min_lag_ms * 1E-3) / sample_spacing_sec
+        n_window_samples = (2 * min_lag_ms * 1E-3) * sample_rate_hz
         print(f"n_window_samples: {n_window_samples}")
         chunk_size = int(np.round(n_window_samples))
 
@@ -168,15 +216,14 @@ def main():
     # N = fs / Δf
 
     print(f"chunk_size: {chunk_size} freq_resolution: {freq_resolution:0.6} Hz")
-    chunk_freqs = np.fft.fftfreq(chunk_size, sample_spacing_sec)
-    chunk_freqs += center_freq_hz
 
-    n_chunks_guess = 3
-    # n_chunks_guess =  total_samples // chunk_size
+    n_chunks_guess =  total_samples // chunk_size
+    if n_chunks_guess > 20:
+        n_chunks_guess = 20
     # plot all the chunks?
     read_and_plot_n_chunks(sigfile_obj,
                            title=base_data_name,
-                           freqs=chunk_freqs,
+                           freqs=None,
                            sampling_rate_hz=sample_rate_hz,
                            sample_start_idx=0,
                            chunk_size=chunk_size,
