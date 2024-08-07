@@ -9,6 +9,8 @@ import argparse
 import os
 import json
 from datetime import datetime, timezone
+
+import numpy as np
 import sigmf
 from sigmf import SigMFFile
 
@@ -77,6 +79,9 @@ def freq_ctr_and_bw(bandcode):
         case 'L1M':
             # Exact chip rate for M code is 5.115 MHz, and sub-carrier is 10.23 MHz?
             return 1575.4200, 15.345, 10.23, 5.115
+        case 'V1':
+            # simulate receving a "virtual" white noise signal on the L1 band
+            return 1575.4200, 24.0, 10.0, 10.0
         case 'KALX' | _:
             return 90.7000, 5.000, 2.0, 0.2 # KALX.berkeley.edu
 
@@ -111,7 +116,7 @@ def main():
                                  'L1CA','L1M', 'L2C', 'L2CM', 'L5I',
                                  'B2a', 'B2c', 'B3',
                                  'E1', 'E5a', 'E5b', 'E6',
-                                 'H1','KALX'
+                                 'H1','KALX', 'V1'
                                  ],
                         help='Short code string for the GNSS band selected (default: L1)')
     parser.add_argument('--duration', '-d',  type=int, default=30,
@@ -172,26 +177,35 @@ def main():
     step_count = 0
     line_count = 0
     capture_start_utc = None
-    with (Popen([cmd_str], stdout=PIPE, stderr=STDOUT, text=True, shell=True) as proc):
-        for line in proc.stdout:
-            if line_count > 6: # skip command startup lines
-                if capture_start_utc is None:
-                    capture_start_utc = datetime.utcnow().isoformat()+'Z'
+    if bandcode != 'V1':
+        with (Popen([cmd_str], stdout=PIPE, stderr=STDOUT, text=True, shell=True) as proc):
+            for line in proc.stdout:
+                if line_count > 6: # skip command startup lines
+                    if capture_start_utc is None:
+                        capture_start_utc = datetime.utcnow().isoformat()+'Z'
 
-                numeric_values = re.findall(regex, line)
-                if numeric_values is not None and len(numeric_values) == 7:
-                    # 8.1 MiB / 1.000 sec =  8.1 MiB/second, average power -2.0 dBfs, 14272 bytes free in buffer, 0 overruns, longest 0 bytes
-                    # ['8.1', '1.000', '8.1', '-2.0', '14272', '0', '0']
-                    print(numeric_values)
-                    step_power = numeric_values[3]
-                    total_power += float(step_power)
-                    step_count += 1
-                else:
-                    # read all the stdout until finished, else data out files are not flushed
-                    continue
-            line_count += 1
+                    numeric_values = re.findall(regex, line)
+                    if numeric_values is not None and len(numeric_values) == 7:
+                        # 8.1 MiB / 1.000 sec =  8.1 MiB/second, average power -2.0 dBfs, 14272 bytes free in buffer, 0 overruns, longest 0 bytes
+                        # ['8.1', '1.000', '8.1', '-2.0', '14272', '0', '0']
+                        print(numeric_values)
+                        step_power = numeric_values[3]
+                        total_power += float(step_power)
+                        step_count += 1
+                    else:
+                        # read all the stdout until finished, else data out files are not flushed
+                        continue
+                line_count += 1
+    else:
+        # save a fake signal file
+        total_interleaved_values = n_samples * 2
+        # I and Q values should be completely independent
+        one_big_chunk = np.random.random(total_interleaved_values)*np.iinfo(np.int8).max
+        one_big_chunk.astype('int8').tofile(data_out_path)
+        total_power = -1.0
+        step_count = 1
 
-    rc = proc.returncode
+    # rc = proc.returncode
     # print(f"hackrf_transfer finished with rc: {rc}")
 
     avg_power = total_power / float(step_count)
