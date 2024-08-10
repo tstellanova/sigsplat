@@ -53,15 +53,10 @@ def read_file_meta(sigfile_obj):
     return center_freq_hz, sample_rate_hz, freq_lower_edge_hz, freq_upper_edge_hz, total_samples_guess, focus_label
 
 
-def circular_autocorrelation(chunk):
-    N = len(chunk)
-    chunk_fft = np.fft.fft(chunk, N)
-    corr = np.fft.ifft(chunk_fft * np.conj(chunk_fft), N)
-    return corr/N
-
 def autocorrelation_fft(chunk):
     """
     Compute the autocorrelation of a signal using FFT and IFFT.
+    Notionally faster for large chunks due to optimization of FFT.
     """
     N = len(chunk)
     # use a larger output bucket to force padding with zeroes (fixes circularity)
@@ -105,21 +100,18 @@ def read_and_plot_n_chunks(
     correlation_avg_I = None
     correlation_avg_Q = None
     correlation_avg = None
-    
+
     # typically at the beginning of every cycle there's some spurious high-match correlation--skip it
     initial_skip_inset = chunk_size//100
     print(f"reading {n_chunks} chunks...")
     for sample_idx in range(sample_start_idx, end_idx_guess, chunk_size):
         chunk = sigfile_obj.read_samples(start_index=sample_idx, count=chunk_size)
-        # corr = circular_autocorrelation(chunk)
         # corr = slow_correlation(chunk)
         corr = autocorrelation_fft(chunk)
-        corr /= chunk.size # normalize by the number of samples
-        # print(f"corr shape: {corr.shape}")
-        corr[:initial_skip_inset] = np.median(corr)
-        corr[-initial_skip_inset:] = np.median(corr)
-        # print(f"correlation_avg shape: {correlation_avg_I.shape} corr shape: {corr.shape}")
-        # correlation_avg += np.abs(corr)
+        corr /= chunk.size # normalize by the number of samples in a chunk
+        med_corr = np.median(corr)
+        corr[:initial_skip_inset] = med_corr
+        corr[-initial_skip_inset:] = med_corr
         if correlation_avg_I is None:
             correlation_avg_I = np.zeros_like(corr, dtype=float)
             correlation_avg_Q = np.zeros_like(corr, dtype=float)
@@ -130,7 +122,7 @@ def read_and_plot_n_chunks(
         correlation_avg  += np.abs(corr)
         n_chunks_read += 1
 
-    # assert n_chunks_read == n_chunks
+    assert n_chunks_read == n_chunks
     correlation_avg_I /= n_chunks_read
     correlation_avg_Q /= n_chunks_read
     correlation_avg /= n_chunks_read
@@ -142,7 +134,7 @@ def read_and_plot_n_chunks(
     # print(f"peaks: {peaks} properties: {properties}")
     if properties and properties['prominences'] is not None:
         proms = properties['prominences']
-        # print(f"proms: {proms}")
+        print(f"proms: {proms}")
         if proms.size > 0:
             max_prom_idx = proms.argmax()
             max_prom_val = proms[max_prom_idx]
@@ -189,7 +181,7 @@ def main():
     parser = argparse.ArgumentParser(description='Analyze SIGMF file for autocorrelation')
     parser.add_argument('src_meta',
                         help="Source sigmf file name eg 'test_sigmf_file' with one of the sigmf file extensions")
-    parser.add_argument('--min_lag_ms',dest='min_lag_ms', type=float, default=1.0,
+    parser.add_argument('--min_lag_ms',dest='min_lag_ms', type=float, default=4.0,
                         help="Minimum repeat time in ms (for autocorrelation calculation)")
     args = parser.parse_args()
 
