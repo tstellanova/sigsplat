@@ -105,6 +105,7 @@ def read_and_plot_n_chunks(
     initial_skip_inset = chunk_size//100
     print(f"reading {n_chunks} chunks...")
     for sample_idx in range(sample_start_idx, end_idx_guess, chunk_size):
+        print(f"read {sample_idx} .. {sample_idx + chunk_size}  / {end_idx_guess}")
         chunk = sigfile_obj.read_samples(start_index=sample_idx, count=chunk_size)
         # corr = slow_correlation(chunk)
         corr = autocorrelation_fft(chunk)
@@ -128,22 +129,25 @@ def read_and_plot_n_chunks(
     correlation_avg /= n_chunks_read
 
     # select the peak with a minimum prominence above immediate surroundings
-    print(f"finding peaks...")
-    peaks, properties = signal.find_peaks(correlation_avg_I, prominence=0.01)
+    max_correlation_value = np.max(correlation_avg)
+    print(f"finding peaks in max_corr {max_correlation_value}...")
+    min_prominence = 0.1 * max_correlation_value
+    max_prominence = max_correlation_value
+    peaks, properties = signal.find_peaks(correlation_avg, prominence=[min_prominence,max_prominence])
     peak_sample_time_ms = None
     # print(f"peaks: {peaks} properties: {properties}")
     if properties and properties['prominences'] is not None:
         proms = properties['prominences']
-        print(f"proms: {proms}")
+        # print(f"proms: {proms}")
         if proms.size > 0:
             max_prom_idx = proms.argmax()
             max_prom_val = proms[max_prom_idx]
             max_peak_sample_num = peaks[max_prom_idx]
             peak_sample_time_ms = sample_times_ms[max_peak_sample_num]
-            peak_cycl_freq = 1E3/(peak_sample_time_ms)
-            print(f"max prominence is {max_prom_val:0.6f} at {peak_sample_time_ms} ms ({peak_cycl_freq} Hz) ")
+            print(f"max prominence is at {peak_sample_time_ms} ms ")
 
-    # plt.figure(figsize=(12, 8))
+        # TODO find repeated prominences that repeat at approximately the same interval
+
     subplot_rows = 3
     subplot_row_idx = 0
     fig, axs = plt.subplots(subplot_rows, 1,  sharex=True, figsize=(12, 8))
@@ -152,12 +156,9 @@ def read_and_plot_n_chunks(
     if title is None:
         title =  "Sigfile"
     fig.suptitle(title)
+
     plt.subplot(subplot_rows, 1, (subplot_row_idx:=subplot_row_idx+1))
     plt.plot(sample_times_ms, correlation_avg_I)
-    if peak_sample_time_ms is not None:
-        # plt.plot(sample_times_ms[peaks], correlation_avg[peaks], "x")
-        plt.plot(peak_sample_time_ms,correlation_avg_I[max_peak_sample_num],"x")
-        # plt.axvline(peak_sample_time_ms, color = "C1")
     plt.grid(True)
     plt.ylabel("Avg correlation (I)")
 
@@ -168,6 +169,9 @@ def read_and_plot_n_chunks(
 
     plt.subplot(subplot_rows, 1, (subplot_row_idx:=subplot_row_idx+1))
     plt.plot(sample_times_ms, correlation_avg)
+    if peak_sample_time_ms is not None:
+        plt.plot(peak_sample_time_ms,correlation_avg[max_peak_sample_num],"x", color =  "C1")
+        # plt.axvline(peak_sample_time_ms, color = "C1")
     plt.grid(True)
     plt.ylabel("Avg correlation")
 
@@ -218,7 +222,7 @@ def main():
     print(f"chunk_size: {chunk_size} freq_resolution: {freq_resolution:0.6} Hz")
 
     n_chunks_guess =  total_samples // chunk_size
-    chunk_limit = 20
+    chunk_limit = 10
     if n_chunks_guess > chunk_limit:
         print(f"clamping {n_chunks_guess} to {chunk_limit}")
         n_chunks_guess = chunk_limit
