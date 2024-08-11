@@ -29,16 +29,14 @@ def freq_ctr_and_bw(bandcode):
     """
     match bandcode:
         case 'L2':
-            return 1227.6000, 11.000, 2.0, 2.0 # adequate for most L2 GPS uses?
+            return 1227.6000, 11.000, 3.0, 3.0 # adequate for most L2 GPS uses?
         case 'L2C':
             # The exact L2C chip rate is 1.023 Msps (2x 511.5 Ksps multiplexed)
             # "The CM code is 10,230 chips long, repeating every 20 ms.
             #  The CL code is 767,250 chips long, repeating every 1,500 ms.
             #  Each signal is transmitted at 511,500 chips per second (chip/s);
             # however, they are multiplexed together to form a 1,023,000-chip/s signal."
-            return 1227.6000, 11.000, 3.0, 2.5
-        case 'L2CM':
-            return 1227.6000, 11.000, 3.0, 2.5
+            return 1227.6000, 11.000, 5.0, 5.0
         case 'L3':
             return 1381.0500, 15.345, 2.0, 2.0
         case 'L4':
@@ -46,7 +44,7 @@ def freq_ctr_and_bw(bandcode):
         case 'L5':
             # L5 has 10.23 MHz chipping rate (10.23E6 chips /sec)
             # L5 has a code length of 10.23E3 chips
-            return 1176.4500, 12.500, 12.00, 12.0
+            return 1176.4500, 12.500, 12.50, 12.5
         case 'L5I':
             return 1176.4500, 20.4600, 20.0, 20.0
         case 'B2a':
@@ -234,7 +232,6 @@ def main():
 
     with open(meta_out_path, "w") as meta_outfile:
         meta_outfile.write(meta_json)
-
 
 if __name__ == "__main__":
     main()
