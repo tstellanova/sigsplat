@@ -8,16 +8,11 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 import sigmf
-from matplotlib.ticker import StrMethodFormatter
+
 from sigmf import sigmffile, SigMFFile
-from scipy.fftpack import fft
 from scipy import signal
 
 matplotlib.use('qtagg')
-
-
-import numpy as np
-import matplotlib.pyplot as plt
 
 
 def read_file_meta(sigfile_obj):
@@ -68,7 +63,21 @@ def autocorrelation_fft(chunk):
 
 def slow_correlation(chunk):
     result = np.correlate(chunk, chunk, mode='full')
-    return result[result.size // 2:]
+    result = result[result.size // 2:]
+    result /= len(chunk) # normalize by the number of samples in a chunk
+    return result
+
+
+def auto_autocorrelation(sample_sequence):
+    """
+    Use well-known scipy methods to perform autocorrelation
+    :param sample_sequence:
+    :return: Autocorrelation normalized to the number of incoming samples
+    """
+    result = signal.correlate(sample_sequence, sample_sequence, mode='full', method='auto')
+    result = result[result.size // 2:]/len(sample_sequence)
+    # print(f"autocorrelation len: {len(result)}")
+    return result
 
 
 def read_and_plot_n_chunks(
@@ -108,11 +117,11 @@ def read_and_plot_n_chunks(
         print(f"read {sample_idx} .. {sample_idx + chunk_size}  / {end_idx_guess}")
         chunk = sigfile_obj.read_samples(start_index=sample_idx, count=chunk_size)
         # corr = slow_correlation(chunk)
-        corr = autocorrelation_fft(chunk)
-        corr /= chunk.size # normalize by the number of samples in a chunk
+        # corr = autocorrelation_fft(chunk)
+        corr = auto_autocorrelation(chunk)
         med_corr = np.median(corr)
         corr[:initial_skip_inset] = med_corr
-        corr[-initial_skip_inset:] = med_corr
+        # corr[-initial_skip_inset:] = med_corr
         if correlation_avg_I is None:
             correlation_avg_I = np.zeros_like(corr, dtype=float)
             correlation_avg_Q = np.zeros_like(corr, dtype=float)
@@ -130,7 +139,7 @@ def read_and_plot_n_chunks(
 
     # select the peak with a minimum prominence above immediate surroundings
     max_correlation_value = np.max(correlation_avg)
-    print(f"finding peaks in max_corr {max_correlation_value}...")
+    print(f"finding peaks from peak {max_correlation_value}...")
     min_prominence = 0.1 * max_correlation_value
     max_prominence = max_correlation_value
     peaks, properties = signal.find_peaks(correlation_avg, prominence=[min_prominence,max_prominence])
@@ -222,7 +231,7 @@ def main():
     print(f"chunk_size: {chunk_size} freq_resolution: {freq_resolution:0.6} Hz")
 
     n_chunks_guess =  total_samples // chunk_size
-    chunk_limit = 10
+    chunk_limit = 20
     if n_chunks_guess > chunk_limit:
         print(f"clamping {n_chunks_guess} to {chunk_limit}")
         n_chunks_guess = chunk_limit
