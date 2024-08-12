@@ -139,9 +139,10 @@ def read_and_plot_n_chunks(
 
     # select the peak with a minimum prominence above immediate surroundings
     max_correlation_value = np.max(correlation_avg)
-    print(f"finding peaks from peak {max_correlation_value}...")
-    min_prominence = 0.1 * max_correlation_value
+    min_prominence = 0.5 * max_correlation_value
     max_prominence = max_correlation_value
+    print(f"finding peaks from {min_prominence} to {max_prominence}...")
+
     peaks, properties = signal.find_peaks(correlation_avg, prominence=[min_prominence,max_prominence])
     peak_sample_time_ms = None
     # print(f"peaks: {peaks} properties: {properties}")
