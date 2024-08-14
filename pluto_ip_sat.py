@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
-Record GNSS data from a particular band/code
-using an IP-connected Pluto SDR, and output in sigmf format
+Record RF baseband from a particular band/code
+using an IP-connected Pluto SDR, and output in SigMF format
 """
 from subprocess import Popen, PIPE, STDOUT
 import re
@@ -16,7 +16,7 @@ from sigmf import SigMFFile
 
 def freq_ctr_and_bw(bandcode):
     """
-    Convert a GNSS band code to the corresponding center frequency and bandwidths (all in float MHz),
+    Convert a band code to the corresponding center frequency and bandwidths (all in float MHz),
     for example:
     GPS L1 Band: 1575.42 MHz with a bandwidth of 15.345 MHz
     GPS L2 Band: 1227.6 MHz with a bandwidth of 11 MHz
@@ -60,8 +60,11 @@ def freq_ctr_and_bw(bandcode):
         case 'E1':
             return 1575.4200, 24.552, 2.0, 2.0
         case 'H1':
-            # Useful for recording hydrogen line in the same manner as we record GNSS
+            # Record the Hydrogen Line
             return 1420.4000, 12.000, 2.0, 2.0
+        case 'RCM':
+            # Record on the Radarsat Constellation (RCM-1, RCM-2, RCM-3, Radarsat-2)
+            return 5405.000, 100.00, 25.0, 25.0
         case 'L1':
             # adequate for most L1 GPS uses
             return 1575.4200, 15.345, 2.0, 2.0
@@ -85,15 +88,15 @@ def freq_ctr_and_bw(bandcode):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Grab sosme GNSS data using a remote Pluto SDR over IP')
+    parser = argparse.ArgumentParser(description='Grab some baseband RF data using a remote Pluto SDR over IP')
     parser.add_argument('--band', '-b', dest='bandcode', default='L1',
                         choices=['L1', 'L2', 'L3', 'L4', 'L5',
                                  'L1CA','L1M', 'L2C', 'L2CM', 'L5I',
                                  'B2a', 'B2c', 'B3',
                                  'E1', 'E5a', 'E5b', 'E6',
-                                 'H1','KALX', 'V1'
+                                 'H1','KALX', 'V1', 'RCM'
                                  ],
-                        help='Short code string for the GNSS band selected (default: L1)')
+                        help='Short code string for the band selected (default: L1)')
     parser.add_argument('--ip_address','-ip', dest='ip_address',required=True,
                         help='IP address of the Pluto to connect with')
     parser.add_argument('--satdump_bin_path',dest='satdump_bin_path',
@@ -103,7 +106,7 @@ def main():
                         help="Directory path to place output files"
                         )
     parser.add_argument('--duration', '-d',  type=int, default=10,
-                        help='Duration to capture, in seconds (default: 30)')
+                        help='Duration to capture, in seconds')
 
 
     args = parser.parse_args()
@@ -113,10 +116,6 @@ def main():
     satdump_bin_path = args.satdump_bin_path
     out_path = args.out_path
 
-    # Our goal is to generate a command of the form:
-    # satdump record output_baseband_name --source src_name --samplerate device_samplerate --frequency device_frequency --baseband_format format [others parameters]
-    # For example, on macos:
-    # /Applications/SatDump.app/Contents/MacOS/satdump record goes_18_test --source hackrf --samplerate 2412000 --frequency 1694100000 --baseband_format cs8 --timeout 10
 
     if not os.path.isdir(out_path):
         print(f"out_path {out_path} does not exist")
@@ -140,8 +139,8 @@ def main():
 
     # figure out where to put the output files automatically
     # SatDump's native output file format would be something like:
-    # 2024-08-09_03-55-00_10000000SPS_1176000000Hz.cs8
-    base_out_path = f'{out_path}pluto_gnss_{bandcode}_{duration_seconds}s_'
+    # 2024-08-09_03-55-00_10000000SPS_1176000000Hz.cs16
+    base_out_path = f'{out_path}pluto_sat_{bandcode}_{duration_seconds}s_'
     data_out_path = None
     file_number = 0
     while True:
@@ -150,13 +149,13 @@ def main():
         if not os.path.isfile(meta_out_path):
             break
     base_data_out_path = f'{base_out_path}{file_number:04d}'
-    inter_data_out_path = f'{base_data_out_path}.cs8' # satdump likes to append its own file extension
+    inter_data_out_path = f'{base_data_out_path}.cs16' # satdump likes to append its own file extension
     full_data_out_path = f'{base_out_path}{file_number:04d}.sigmf-data'
 
     # gain_mode 3 == hybrid
     record_duration = duration_seconds + 1
     opt_str = (f"record {base_data_out_path} --source plutosdr --frequency {ctr_freq_hz} "
-                f"--samplerate {sample_rate_hz} --baseband_format cs8  --gain_mode 3 --gain 40 "
+                f"--samplerate {sample_rate_hz} --baseband_format cs16  --gain_mode 3 --gain 40 "
                 f"--ip_address {sdr_ip_address} --auto_reconnect true --timeout {record_duration}")
 
     cmd_str = f"{satdump_bin_path} {opt_str}"
@@ -180,7 +179,7 @@ def main():
         total_interleaved_values = n_samples * 2
         # I and Q values should be completely independent
         one_big_chunk = np.random.random(total_interleaved_values)*np.iinfo(np.int8).max
-        one_big_chunk.astype('int8').tofile(data_out_path)
+        one_big_chunk.astype('int16').tofile(data_out_path)
         total_power = -1.0
         step_count = 1
 
@@ -193,16 +192,16 @@ def main():
     # TODO look at using the SigMFFile object, directly, instead
     meta_info_dict = {
         "global": {
-            SigMFFile.DATATYPE_KEY: 'ci8',
+            SigMFFile.DATATYPE_KEY: 'ci16_le',
             SigMFFile.SAMPLE_RATE_KEY: int(f'{sample_rate_hz}'),
-            SigMFFile.HW_KEY: "Pluto SDR, bias tee, active ceramic patch antenna",
+            SigMFFile.HW_KEY: "PlutoPlus SDR, bias tee, LNA",
             SigMFFile.AUTHOR_KEY: 'Todd Stellanova',
             SigMFFile.VERSION_KEY: f'{sigmf.__version__}',
-            SigMFFile.DESCRIPTION_KEY: f'GNSS {bandcode} recorded using satdump',
+            SigMFFile.DESCRIPTION_KEY: f'Band {bandcode} recorded using satdump',
             SigMFFile.RECORDER_KEY: 'satdump',
-            'antenna:type': 'patch',
-            'stellanovat:sdr': 'PlutoSDR',
-            'stellanovat:LNA': 'active_antenna',
+            'antenna:type': 'Wideband',
+            'stellanovat:sdr': 'PlutoPlus',
+            'stellanovat:LNA': 'Unknown',
             'stellanovat:LNA_pwr': 'bias_tee',
             'stellanovat:boost_amp': 'None',
         },
@@ -222,7 +221,7 @@ def main():
                 SigMFFile.LENGTH_INDEX_KEY: int(f'{n_samples}'),
                 SigMFFile.FHI_KEY: int(f'{freq_upper_edge}'),
                 SigMFFile.FLO_KEY: int(f'{freq_lower_edge}'),
-                SigMFFile.LABEL_KEY: f'GNSS {bandcode}',
+                SigMFFile.LABEL_KEY: f'Band {bandcode}',
             }
         ]
     }
