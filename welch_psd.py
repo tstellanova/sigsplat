@@ -105,7 +105,7 @@ def main():
     plt.figure(figsize=(16, 8))
     plt.axvline(center_freq_hz, color="skyblue")
     plt.plot(freqs , PSD_avg)
-    plt.axvline(8420.21645E6, color="red")
+    # plt.axvline(8420.21645E6, color="red")
     plt.title('Power Spectral Density')
     plt.xlabel('Frequency (Hz)')
     plt.ylabel('Power/Frequency (dB/Hz)')
