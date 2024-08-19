@@ -140,17 +140,16 @@ def main():
     # figure out where to put the output files automatically
     # SatDump's native output file format would be something like:
     # 2024-08-09_03-55-00_10000000SPS_1176000000Hz.cs16
-    base_out_path = f'{out_path}pluto_sat_{bandcode}_{duration_seconds}s_'
-    data_out_path = None
-    file_number = 0
-    while True:
-        file_number += 1
-        meta_out_path = f'{base_out_path}{file_number:04d}.sigmf-meta'
-        if not os.path.isfile(meta_out_path):
-            break
-    base_data_out_path = f'{base_out_path}{file_number:04d}'
-    inter_data_out_path = f'{base_data_out_path}.cs16' # satdump likes to append its own file extension
-    full_data_out_path = f'{base_out_path}{file_number:04d}.sigmf-data'
+
+    # date_time_str = datetime.utcnow().isoformat()+'Z'
+    date_time_str = datetime.utcnow().isoformat(sep='_',timespec='seconds')+'Z'
+
+    print(f"datttsr {date_time_str}")
+    full_file_path = f'{out_path}{date_time_str}'
+    base_data_out_path = f'{full_file_path}_plutosat_{bandcode}_{duration_seconds}s'
+    meta_out_path = f'{base_data_out_path}.sigmf-meta'
+    interim_data_out_path = f'{base_data_out_path}.cs16' # satdump likes to append its own file extension
+    full_data_out_path = f'{base_data_out_path}.sigmf-data'
 
     # gain_mode 3 == hybrid
     record_duration = duration_seconds + 1
@@ -172,21 +171,21 @@ def main():
         with (Popen([cmd_str], stdout=PIPE, stderr=STDOUT, text=True, shell=True) as proc):
             for line in proc.stdout:
                 if capture_start_utc is None:
-                    capture_start_utc = datetime.utcnow().isoformat()+'Z'
+                    capture_start_utc = datetime.utcnow().replace(microsecond=0).isoformat('_', )+'Z'
                 line_count += 1
     else:
         # save a fake signal file
         total_interleaved_values = n_samples * 2
         # I and Q values should be completely independent
         one_big_chunk = np.random.random(total_interleaved_values)*np.iinfo(np.int8).max
-        one_big_chunk.astype('int16').tofile(data_out_path)
+        one_big_chunk.astype('int16').tofile(full_data_out_path)
         total_power = -1.0
         step_count = 1
 
     rc = proc.returncode
     print(f"recorder finished with rc: {rc}")
-    if os.path.isfile(inter_data_out_path):
-        os.rename(inter_data_out_path, full_data_out_path)
+    if os.path.isfile(interim_data_out_path):
+        os.rename(interim_data_out_path, full_data_out_path)
 
 
     # TODO look at using the SigMFFile object, directly, instead
