@@ -20,7 +20,7 @@ pprint(obs.header)
 print("obs data shape: ", obs.data.shape)
 
 print("n_coarse_chan: ", obs.calc_n_coarse_chan(2.94))
-r = GuppiRaw('./data/blc3_guppi_57386_VOYAGER1_0004.0000.raw')
+r = GuppiRaw('./data/blc03_samples/blc3_guppi_57386_VOYAGER1_0004.0000.raw')
 first_header = r.read_first_header()
 pprint(first_header)
 # r.find_n_data_blocks()

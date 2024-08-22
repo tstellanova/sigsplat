@@ -40,7 +40,7 @@ parser = argparse.ArgumentParser(description=
                                  for each polarization. """)
 parser.add_argument('in_fname',
                     help='GUPPI RAW file name. This will be generalized to the set of all files with similar names')
-parser.add_argument('in_ctr_freq', type=float,
+parser.add_argument("--ctr_freq", '-fc', dest='in_ctr_freq', type=float, default=8419.3,
                     help='Frequency within a coarse channel to extract')
 
 args = parser.parse_args()
@@ -163,6 +163,9 @@ if time_resolution_sec:
     print(f'time res: {time_resolution_sec:0.3E} , calc freq res: {calc_freq_resolution:0.3f}, chan_bw: {chan_bw_hz:0.3f}')
 
 
+if fFreq is None:
+    # if user doesn't care, extract the center channel
+    fFreq = (fHigh + fLow) / 2
 
 # make sure user asked for frequency covered by file
 if fFreq < min(fLow,fHigh) or fFreq > max(fLow,fHigh):
@@ -174,6 +177,8 @@ if obsbw > 0:
     nChanOI = int((fFreq-fLow)/dChanBW)
 else:
     nChanOI = int((fLow-fFreq)/abs(dChanBW))
+
+print(f"obsbw: {obsbw} fLow: {fLow} fHigh: {fHigh} fFreq: {fFreq} dChanBW: {dChanBW}")
 
 BlocksPerFile = np.zeros(len(all_filenames))
 idx = 0
@@ -192,15 +197,19 @@ TotCenFreq = (fLowChan+fHighChan)/2.
 print('extracting channel #' + str(nChanOI))
 print('frequency coverage = ' + str(min(fLowChan,fHighChan))+ ' - ' + str(max(fLowChan,fHighChan)) + ' MHz')
 
-ofname_meta1 = fname.split('\\')[-1][:-14]+'_pol1.sigmf-meta'     # meta file name pol#1
-ofname_data1 = fname.split('\\')[-1][:-14]+'_pol1.sigmf-data'     # data file name pol#1
-ofname_meta2 = fname.split('\\')[-1][:-14]+'_pol2.sigmf-meta'     # meta file name pol#2
-ofname_data2 = fname.split('\\')[-1][:-14]+'_pol2.sigmf-data'     # data file name pol#2
+fn_prefix = fname.split('\\')[-1][:-14]
+fn_prefix_pol1 = f"{fn_prefix}_ch{nChanOI:0>3}_pol1"
+ofname_meta1 = f"{fn_prefix_pol1}.sigmf-meta"
+ofname_data1 = f"{fn_prefix_pol1}.sigmf-data"
+fn_prefix_pol2 = f"{fn_prefix}_ch{nChanOI:0>3}_pol2"
+ofname_meta2 = f"{fn_prefix_pol2}.sigmf-meta"
+ofname_data2 = f"{fn_prefix_pol1}.sigmf-data"
 
 # extract and write data to file
 output_file1 = open(ofname_data1,'wb')
 output_file2 = open(ofname_data2,'wb')
 idx = -1
+n_total_samples = 0
 for fname in all_filenames:
     idx = idx+1
     fread = open(fname,'rb')
@@ -208,10 +217,24 @@ for fname in all_filenames:
     for nblock in range(int(BlocksPerFile[idx])):
         fread.seek(int(nblock*(nHeaderLines*80+nPadd+nblocsize)+nHeaderLines*80+nPadd+nChanOI*nChanSize))
         tmpdata = np.fromfile(fread, dtype=np.int8, count=int(nChanSize))
-        tmpdata = np.reshape(tmpdata,(2,int(nChanSize/2)),order='F')
-        output_file1.write(np.reshape(tmpdata[:,::2],(1,int(nChanSize/2)),order='F'))    # write pol 1
-        output_file2.write(np.reshape(tmpdata[:,1::2],(1,int(nChanSize/2)),order='F'))   # write pol 2
-    fread.close()
+        cur_data_len = int(nChanSize/2)
+        tmpdata = np.reshape(tmpdata,(2,cur_data_len),order='F')
+        # normalize the data ?
+        data_range = tmpdata.max() - tmpdata.min()
+        tmpdata = (tmpdata - tmpdata.min()) / data_range
+
+        pol1_data = np.reshape(tmpdata[:,::2],(1,cur_data_len),order='F')
+        pol1_med = np.median(pol1_data)
+        # print(f"pol1_data :{pol1_data.shape}")
+        pol1_data[0, int(pol1_data.shape[1]/2)] = pol1_med # DC ignore
+
+        output_file1.write(pol1_data)    # write pol 1
+        pol2_data = np.reshape(tmpdata[:,1::2],(1,cur_data_len),order='F')
+        pol2_med = np.median(pol2_data)
+        pol2_data[0, int(pol2_data.shape[1]/2)] = pol2_med # DC ignore
+        output_file2.write(pol2_data)   # write pol 2
+        n_total_samples += nChanSize
+fread.close()
 output_file1.close()
 output_file2.close()
 
@@ -228,10 +251,11 @@ print("dataset_format: ", dataset_format)
 pol1_meta = {
     'global':
         {
+            # SigMFFile.RECORDER_KEY: 'hackrf_transfer',
             SigMFFile.DATATYPE_KEY: dataset_format,
             SigMFFile.VERSION_KEY: f'{sigmf.__version__}',
-            SigMFFile.SAMPLE_RATE_KEY: dChanBW*1e6,
-            'core:hw' : telescope + ' ' + frontend,
+            SigMFFile.SAMPLE_RATE_KEY: np.abs(dChanBW)*1e6,
+            SigMFFile.HW_KEY:  telescope + ' ' + frontend,
             SigMFFile.AUTHOR_KEY:  observer,
             SigMFFile.DESCRIPTION_KEY: 'converted from GUPPI RAW - source observed : ' + source,
             'core:recorder': backend,
@@ -245,12 +269,19 @@ pol1_meta = {
         },
     'captures': [
         {
-            'core:sample_start' : 0,
+            SigMFFile.START_INDEX_KEY: 0,
             SigMFFile.FREQUENCY_KEY: TotCenFreq*1e6,
-            "core:datetime" : timedate
+            SigMFFile.DATETIME_KEY: timedate
         }
     ],
     'annotations': [
+        {
+            SigMFFile.START_INDEX_KEY: 0,
+            SigMFFile.LENGTH_INDEX_KEY: int(f'{n_total_samples}'),
+            SigMFFile.FHI_KEY: float(8419.35E6),
+            SigMFFile.FLO_KEY: int(8419.25E6),
+            SigMFFile.LABEL_KEY: source,
+        }
     ]
 }
 
@@ -262,8 +293,11 @@ pol2_meta['global']['antenna:cross_polar_discrimination'] = 'polarization YY'
 fopen1 = open(ofname_meta1,'w')
 fopen1.write(json.dumps(pol1_meta,indent=2))
 fopen1.close()
+print(f"Wrote: {ofname_meta1}")
 
 fopen2 = open(ofname_meta2,'w')
 fopen2.write(json.dumps(pol2_meta,indent=2))
 fopen2.close()
+print(f"Wrote: {ofname_meta2}")
+
 
