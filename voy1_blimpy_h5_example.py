@@ -27,9 +27,9 @@ def main():
     parser = argparse.ArgumentParser(description='Analyze HDF5 file')
     parser.add_argument('--src_data_path',
                         help="Source hdf5 (.h5) file path",
-                        # default="./data/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.h5"
+                        default="./data/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.h5"
                         # default="./data/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.fil"
-                        default="./data/blc07_samples/blc07_guppi_57650_67573_Voyager1_0002.gpuspec.0000.fil"
+                        # default="./data/blc07_samples/blc07_guppi_57650_67573_Voyager1_0002.gpuspec.0000.fil"
                         )
     args = parser.parse_args()
 
@@ -40,8 +40,15 @@ def main():
     print(">>> Dump observation info...")
     obs_obj.info()
     print(f">>> observation header: {obs_obj.header} ")
+    n_coarse_chan = obs_obj.calc_n_coarse_chan()
+    print(f"n_coarse_chan: {n_coarse_chan}")
 
-    print(f"data shape: {obs_obj.data.shape} nbits: {int(obs_obj.header['nbits'])} samples raw len: {len(obs_obj.data[0][0])}")
+    print(f"data shape: {obs_obj.data.shape} , nbits: {int(obs_obj.header['nbits'])} , samples raw len: {len(obs_obj.data[0][0])}")
+    one_sample = obs_obj.data[0,0,0]
+    print(f"one_sample: {one_sample} dtype: {np.dtype(one_sample)} iscomplex: {np.iscomplex(one_sample)}")
+    # two_sample = obs_obj.data[0,0,0]
+    # print(f"two_sample: {two_sample} dtype: {np.dtype(two_sample)} iscomplex: {np.iscomplex(two_sample)}")
+
     number_of_integrations = obs_obj.data.shape[0]
     assert obs_obj.n_ints_in_file == number_of_integrations
 
@@ -49,7 +56,8 @@ def main():
     # ctr: 8344.5 - 8419.30 =
     focus_freq_min = 8419.25 # 8419.29698
     focus_freq_max = 8419.35 #8419.2971
-    print(f"rawdatafile: {obs_obj.header['rawdatafile']}")
+    if 'rawdatafile' in obs_obj.header:
+        print(f"rawdatafile: {obs_obj.header['rawdatafile']}")
     print(f"plot PSD of data in the filterbank file (observation)")
     obs_obj.plot_spectrum(logged=True)
     plt.xticks(rotation=-45, ha="left")
@@ -84,12 +92,6 @@ def main():
     # print(f"src_freqs len: {len(src_freqs)} src_data shape: {src_data.shape} ")
     #
     # plt.show()
-
-
-
-
-
-
 
 
 if __name__ == "__main__":
