@@ -21,11 +21,11 @@ from blimpy import Waterfall
 
 def main():
 
-    parser = argparse.ArgumentParser(description='Analyze HDF5 file')
+    parser = argparse.ArgumentParser(description='Analyze filterbank file')
     parser.add_argument('--src_data_path',
-                        help="Source hdf5 (.h5) file path",
-                        # default="./data/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.h5"
-                        default="./data/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.fil"
+                        help="Source hdf5 (.h5) or filerbank (.fil) file path",
+                        default="./data/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.h5"
+                        # default="./data/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.fil"
                         # default="./data/blc07_samples/blc07_guppi_57650_67573_Voyager1_0002.gpuspec.0000.fil"
                         )
     args = parser.parse_args()
@@ -51,12 +51,17 @@ def main():
     fine_channel_bw_hz = np.abs(fine_channel_bw_mhz) * 1E6
     print(f"n_coarse_chan: {n_coarse_chan} n_fine_chan: {n_fine_chan} fine_channel_bw_hz: {fine_channel_bw_hz}")
     n_integrations_input = obs_obj.n_ints_in_file
-    print(f"n_integrations_input {n_integrations_input}")
+    print(f"Num integrations in file: {n_integrations_input}")
+    n_polarities_stored = obs_obj.header['nifs']
+    print(f"n_polarities_stored {n_polarities_stored}")
 
     print(f"data shape: {obs_obj.data.shape} , nbits: {int(obs_obj.header['nbits'])} , freqs per integration: {len(obs_obj.data[0][0])}")
 
-    number_of_integrations = obs_obj.data.shape[0]
-    assert number_of_integrations == n_integrations_input
+    # validate that the input file data shape matches expectations set by header
+    assert n_integrations_input == obs_obj.data.shape[0]
+    assert n_polarities_stored == obs_obj.data.shape[1]
+    assert n_fine_chan == obs_obj.data.shape[2]
+
 
     # tsamp is "Time integration sampling rate in seconds" (from rawspec)
     integration_period_sec = float(obs_obj.header['tsamp'])

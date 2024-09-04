@@ -51,7 +51,9 @@ def main():
     parser = argparse.ArgumentParser(description='Analyze power correlation of filterbank files')
     parser.add_argument('--src_data_path',
                         help="Source hdf5 (.h5) or filerbank (.fil) file path",
-                        default="./data/blc03_samples/blc3_2bit_guppi_57386_VOYAGER1_0002.gpuspec.0000.fil"
+                        default="/Volumes/GLEAN/filterbank/guppi_58410_37136_195860_FRB181017_0001.0000.h5"
+                        # default="/Volumes/GLEAN/filterbank/blc20_guppi_57991_66219_DIAG_FRB121102_0020.gpuspec.0001.fil"
+                        # default="./data/blc03_samples/blc3_2bit_guppi_57386_VOYAGER1_0002.gpuspec.0000.fil"
                         # default="./data/voyager_f1032192_t300_v2.fil"
                         # default="./data/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.h5"
                         # default="./data/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.fil"
@@ -143,6 +145,7 @@ def main():
     med_delta_corrs = np.median(delta_correlations,axis=1)
 
     fig, axes = plt.subplots(nrows=2, figsize=(12, 8), layout='constrained')
+    fig.suptitle(data_path)
     axes[0].plot(med_first_corrs, label="firsts")
     axes[0].legend()
     axes[1].plot(med_delta_corrs[1:], label="deltas")
