@@ -11,7 +11,7 @@ import blimpy
 import numpy as np
 import matplotlib
 import argparse
-
+import os
 import sigmf
 from matplotlib.ticker import StrMethodFormatter
 from scipy import ndimage
@@ -20,6 +20,9 @@ from blimpy import Waterfall
 import matplotlib.pyplot as plt
 import scipy
 matplotlib.use('qtagg')
+
+# performance monitoring
+from time import perf_counter
 
 
 def normalize_power_spectrum(ps):
@@ -76,35 +79,46 @@ def nearest_power2(N):
 def main():
 
     parser = argparse.ArgumentParser(description='Analyze power correlation of filterbank files')
-    parser.add_argument('--src_data_path',
+    parser.add_argument('src_data_path', nargs='?',
                         help="Source hdf5 (.h5) or filerbank (.fil) file path",
-                        default="../../filterbank/blc27_guppi_58410_37136_195860_FRB181017_0001.0000.h5"
+                        default="../../filterbank/blgcsurvey_cband/spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_13603_BLGCsurvey_Cband_C12_0058.gpuspec.0002.fil"
+                        # default="../../filterbank/blc27_guppi_58410_37136_195860_FRB181017_0001.0000.h5"
                         # default="../../filterbank/blc20_guppi_57991_66219_DIAG_FRB121102_0020.gpuspec.0001.fil"
                         # default="../../filterbank/guppi_58410_37136_195860_FRB181017_0001.0000.h5"
                         # default="../../filterbank/blc20_guppi_57991_66219_DIAG_FRB121102_0020.gpuspec.0001.fil"
                         # default="./data/blc03_samples/blc3_2bit_guppi_57386_VOYAGER1_0002.gpuspec.0000.fil"
                         # default="./data/voyager_f1032192_t300_v2.fil" k
-                        # default="./data/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.h5" k
-                        # default="./data/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.fil"
+                        # default="../../filterbank/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.h5" k
+                        # default="../../filterbank/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.fil"
                         # default="./data/blc07_samples/blc07_guppi_57650_67573_Voyager1_0002.gpuspec.0000.fil" k
                         )
     args = parser.parse_args()
 
     data_path = args.src_data_path
-    print(f'loading file info: {data_path}')
+    print(f'Loading file info: {data_path} ...')
+    perf_start = perf_counter()
     obs_obj = blimpy.Waterfall(data_path)
+    print(f"elapsed: {perf_counter()  - perf_start} seconds")
+
     # dump some interesting facts about this observation
-    print(">>> Dump observation info...")
+    print(">>> Dump observation info ...")
+    perf_start = perf_counter()
     obs_obj.info()
-    # print(f">>> observation header: {obs_obj.header} ")
+    print(f"elapsed: {perf_counter() - perf_start} seconds")
 
     if 'rawdatafile' in obs_obj.header:
         print(f"Source raw data file: {obs_obj.header['rawdatafile']}")
     else:
         print(f"No upstream raw data file reported in header")
 
+    src_data_filename = os.path.basename(data_path)
+
     # the following reads through the filterbank file in order to calculate the number of coarse channels
+    print("Calculate coarse channels ...")
+    perf_start = perf_counter()
     n_coarse_chan = int(obs_obj.calc_n_coarse_chan())
+    print(f"elapsed: {perf_counter() - perf_start} seconds")
+
     n_fine_chan = obs_obj.header['nchans']
     fine_channel_bw_mhz = obs_obj.header['foff']
 
@@ -130,8 +144,8 @@ def main():
     assert n_fine_chan == obs_obj.data.shape[2]
 
     n_integrations_to_process = n_integrations_input
-    if n_integrations_input > 100:
-        n_integrations_to_process = 100
+    if n_integrations_input > 1024:
+        n_integrations_to_process = 1024
         print(f"clamping n_integrations_to_process to {n_integrations_to_process}")
 
     # tsamp is "Time integration sampling rate in seconds" (from rawspec)
@@ -158,7 +172,8 @@ def main():
     first_ps_normalized = normalize_power_spectrum(first_ps)
     prior_ps_normalized = first_ps_normalized
 
-    print(f"walking {n_integrations_to_process} integrations ...")
+    print(f"Walking {n_integrations_to_process} integrations ...")
+    perf_start = perf_counter()
     for int_idx in range(n_integrations_to_process):
         cur_ps = obs_obj.data[int_idx,0]
         cur_ps_normalized = normalize_power_spectrum(cur_ps)
@@ -166,50 +181,62 @@ def main():
         power_diffs[int_idx] = power_diff
         prior_ps_normalized = cur_ps_normalized
 
+    print(f"elapsed: {perf_counter() - perf_start} seconds")
+
     # we now have a huge array of num_integrations x num_fine_channels,
     # something like 16 x 1048576 difference values
     # need to decimate to make platting work
 
-    # down_buckets =  1024
     down_buckets =  2048
     decimated_data = power_diffs
     if n_fine_chan > down_buckets:
-        print(f"Decimating from {n_fine_chan} fine channels to {down_buckets}, ratio: {n_fine_chan / down_buckets}")
+        print(f"Decimating from {n_fine_chan} fine channels to {down_buckets}, ratio: {n_fine_chan / down_buckets} ...")
+        perf_start = perf_counter()
         # decimated_data = np.array([scipy.signal.decimate(row, down_buckets, ftype='iir') for row in power_diffs])
-        # decimated_data = np.array([scipy.signal.decimate(row, down_buckets, ftype='fir') for row in power_diffs])
-        decimated_data = np.array([gaussian_decimate(row, down_buckets) for row in power_diffs])
+        decimated_data = np.array([scipy.signal.decimate(row, down_buckets, ftype='fir') for row in power_diffs])
+        # decimated_data = np.array([gaussian_decimate(row, down_buckets) for row in power_diffs])
+        print(f"elapsed: {perf_counter() - perf_start:0.3f} seconds")
     else:
         down_buckets = n_fine_chan
 
-    print(f"Log10...")
     log_scaled_data = safe_log(decimated_data)
     plot_data = log_scaled_data
 
-    print(f"plotting {plot_data.shape}")
+    print(f"Plotting {plot_data.shape} ...")
+    perf_start = perf_counter()
+
     # Plot the decimated data in a couple different cmaps
-    fig, axes = plt.subplots(nrows=2, figsize=(12, 8), layout='constrained')
-    fig.suptitle(f"{start_freq:0.4f} | {data_path}")
+    # my_dpi=300
+    # full_screen_dims=(3024 / my_dpi, 1964 / my_dpi)
+    full_screen_dims=(16, 10)
+    fig, axes = plt.subplots(nrows=2, figsize=full_screen_dims,  layout='constrained')
+    fig.suptitle(f"{start_freq:0.4f} | {src_data_filename}")
 
     img0 = axes[0].imshow(plot_data.T, aspect='auto', cmap='viridis')
     img1 = axes[1].imshow(plot_data.T, aspect='auto', cmap='inferno')
 
     cbar0 = fig.colorbar(img0, ax=axes[0])
-    cbar0.set_label('ΔdB', rotation=270)
+    cbar0.set_label('Δ dB', rotation=270)
 
     cbar1 = fig.colorbar(img1, ax=axes[1])
-    cbar1.set_label('ΔdB', rotation=270)
+    cbar1.set_label('Δ dB', rotation=270)
 
     yticks = axes[0].get_yticks()
-    print(f"axes0 yticks {yticks}")
+    # print(f"axes0 yticks {yticks}")
     tick_step_mhz = sampling_rate_mhz / len(yticks)
     reduced_freqs = np.arange(start_freq, stop_freq, tick_step_mhz)
     reduced_freqs -= start_freq
     ytick_labels = [f"{freq:0.4f}" for freq in reduced_freqs]
-    print(f"ytick_labels: {ytick_labels}")
+    # print(f"ytick_labels: {ytick_labels}")
     axes[0].set_yticklabels(ytick_labels)
     axes[1].set_yticklabels(ytick_labels)
     axes[0].set_ylabel('BB MHz')
     axes[1].set_ylabel('BB MHz')
+
+    print(f"elapsed: {perf_counter() - perf_start} seconds")
+    img_save_path = f"./img/{src_data_filename}.powdiff.png"
+    print(f"saving image to:\n{img_save_path}")
+    plt.savefig(img_save_path)
 
     plt.show()
 
