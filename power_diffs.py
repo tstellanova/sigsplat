@@ -50,6 +50,18 @@ def min_max_reduction(matrix, num_segments):
 def safe_log(data):
     return np.log10(np.abs(data) + sys.float_info.epsilon) * np.sign(data)
 
+from scipy.ndimage import gaussian_filter1d
+
+def gaussian_decimate(data, num_out_buckets, sigma=3.0):
+    # Step 1: Apply Gaussian filter
+    filtered_data = gaussian_filter1d(data, sigma=sigma)
+
+    # Step 2: Decimate (downsample)
+    decimation_factor = len(data) // num_out_buckets
+    decimated_data = filtered_data[::decimation_factor]
+
+    return decimated_data
+
 def nearest_power2(N):
     # Calculate log2 of N
     a = int(np.log2(N))
@@ -66,13 +78,15 @@ def main():
     parser = argparse.ArgumentParser(description='Analyze power correlation of filterbank files')
     parser.add_argument('--src_data_path',
                         help="Source hdf5 (.h5) or filerbank (.fil) file path",
-                        # default="/Volumes/GLEAN/filterbank/guppi_58410_37136_195860_FRB181017_0001.0000.h5"
-                        # default="/Volumes/GLEAN/filterbank/blc20_guppi_57991_66219_DIAG_FRB121102_0020.gpuspec.0001.fil"
+                        default="../../filterbank/blc27_guppi_58410_37136_195860_FRB181017_0001.0000.h5"
+                        # default="../../filterbank/blc20_guppi_57991_66219_DIAG_FRB121102_0020.gpuspec.0001.fil"
+                        # default="../../filterbank/guppi_58410_37136_195860_FRB181017_0001.0000.h5"
+                        # default="../../filterbank/blc20_guppi_57991_66219_DIAG_FRB121102_0020.gpuspec.0001.fil"
                         # default="./data/blc03_samples/blc3_2bit_guppi_57386_VOYAGER1_0002.gpuspec.0000.fil"
-                        # default="./data/voyager_f1032192_t300_v2.fil"
-                        default="./data/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.h5"
+                        # default="./data/voyager_f1032192_t300_v2.fil" k
+                        # default="./data/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.h5" k
                         # default="./data/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.fil"
-                        # default="./data/blc07_samples/blc07_guppi_57650_67573_Voyager1_0002.gpuspec.0000.fil"
+                        # default="./data/blc07_samples/blc07_guppi_57650_67573_Voyager1_0002.gpuspec.0000.fil" k
                         )
     args = parser.parse_args()
 
@@ -115,6 +129,11 @@ def main():
     assert n_polarities_stored == obs_obj.data.shape[1]
     assert n_fine_chan == obs_obj.data.shape[2]
 
+    n_integrations_to_process = n_integrations_input
+    if n_integrations_input > 100:
+        n_integrations_to_process = 100
+        print(f"clamping n_integrations_to_process to {n_integrations_to_process}")
+
     # tsamp is "Time integration sampling rate in seconds" (from rawspec)
     integration_period_sec = float(obs_obj.header['tsamp'])
     print(f"Integration period (tsamp): {integration_period_sec} seconds")
@@ -133,14 +152,14 @@ def main():
     print(f"file nbits: {int(obs_obj.header['nbits'])}")
     print(f"one_sample dtype: {np.dtype(one_sample)} iscomplex: {np.iscomplex(one_sample)}")
 
-    power_diffs = np.zeros((n_integrations_input,n_fine_chan))
+    power_diffs = np.zeros((n_integrations_to_process,n_fine_chan))
 
     first_ps = obs_obj.data[0,0]
     first_ps_normalized = normalize_power_spectrum(first_ps)
     prior_ps_normalized = first_ps_normalized
 
-    print(f"walking {n_integrations_input} integrations ...")
-    for int_idx in range(n_integrations_input):
+    print(f"walking {n_integrations_to_process} integrations ...")
+    for int_idx in range(n_integrations_to_process):
         cur_ps = obs_obj.data[int_idx,0]
         cur_ps_normalized = normalize_power_spectrum(cur_ps)
         power_diff = np.subtract(cur_ps_normalized, prior_ps_normalized) # x1 - x2
@@ -149,21 +168,49 @@ def main():
 
     # we now have a huge array of num_integrations x num_fine_channels,
     # something like 16 x 1048576 difference values
+    # need to decimate to make platting work
 
-    # downsample_factor = int( (n_fine_chan // n_integrations_input) / 8 )
-    # downsample_factor = nearest_power2(downsample_factor)
-    downsample_factor =  1024
-    print(f"downsample_factor: {downsample_factor} vs n_fine_chan {n_fine_chan} : {downsample_factor}")
+    # down_buckets =  1024
+    down_buckets =  2048
+    decimated_data = power_diffs
+    if n_fine_chan > down_buckets:
+        print(f"Decimating from {n_fine_chan} fine channels to {down_buckets}, ratio: {n_fine_chan / down_buckets}")
+        # decimated_data = np.array([scipy.signal.decimate(row, down_buckets, ftype='iir') for row in power_diffs])
+        # decimated_data = np.array([scipy.signal.decimate(row, down_buckets, ftype='fir') for row in power_diffs])
+        decimated_data = np.array([gaussian_decimate(row, down_buckets) for row in power_diffs])
+    else:
+        down_buckets = n_fine_chan
 
-    decimated_data = np.array([scipy.signal.decimate(row, downsample_factor, ftype='iir') for row in power_diffs])
-    plot_data = safe_log(decimated_data)
+    print(f"Log10...")
+    log_scaled_data = safe_log(decimated_data)
+    plot_data = log_scaled_data
 
+    print(f"plotting {plot_data.shape}")
     # Plot the decimated data in a couple different cmaps
     fig, axes = plt.subplots(nrows=2, figsize=(12, 8), layout='constrained')
-    fig.suptitle(data_path)
-    axes[0].imshow(plot_data.T, aspect='auto', cmap='viridis')
-    axes[1].imshow(plot_data.T, aspect='auto', cmap='inferno')
-    plt.tight_layout()
+    fig.suptitle(f"{start_freq:0.4f} | {data_path}")
+
+    img0 = axes[0].imshow(plot_data.T, aspect='auto', cmap='viridis')
+    img1 = axes[1].imshow(plot_data.T, aspect='auto', cmap='inferno')
+
+    cbar0 = fig.colorbar(img0, ax=axes[0])
+    cbar0.set_label('ΔdB', rotation=270)
+
+    cbar1 = fig.colorbar(img1, ax=axes[1])
+    cbar1.set_label('ΔdB', rotation=270)
+
+    yticks = axes[0].get_yticks()
+    print(f"axes0 yticks {yticks}")
+    tick_step_mhz = sampling_rate_mhz / len(yticks)
+    reduced_freqs = np.arange(start_freq, stop_freq, tick_step_mhz)
+    reduced_freqs -= start_freq
+    ytick_labels = [f"{freq:0.4f}" for freq in reduced_freqs]
+    print(f"ytick_labels: {ytick_labels}")
+    axes[0].set_yticklabels(ytick_labels)
+    axes[1].set_yticklabels(ytick_labels)
+    axes[0].set_ylabel('BB MHz')
+    axes[1].set_ylabel('BB MHz')
+
     plt.show()
 
 
