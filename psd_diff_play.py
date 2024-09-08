@@ -53,17 +53,15 @@ def main():
     parser.add_argument('src_data_path', nargs='?',
                         help="Source hdf5 (.h5) or filerbank (.fil) file path",
                         # default="../../filterbank/misc/voyager_f1032192_t300_v2.fil"
-                        default="../../filterbank/blgcsurvey_cband/"
-                                "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_01220_BLGCsurvey_Cband_B04_0018.gpuspec.0002.fil"
+                        # default="../../filterbank/blgcsurvey_cband/"
+                        #         "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_01220_BLGCsurvey_Cband_B04_0018.gpuspec.0002.fil"
                         #   "spliced_blc00010203040506o7o01113141516o7o0212223242526o7o031323334353637_guppi_58705_14221_BLGCsurvey_Cband_C12_0060.gpuspec.0002.fil"
                         #   "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_18741_BLGCsurvey_Cband_A00_0063.gpuspec.0002.fil"
                         #   "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_13603_BLGCsurvey_Cband_C12_0058.gpuspec.0002.fil"
-                        # default="../../filterbank/misc/"
-                        #   "voyager_f1032192_t300_v2.fil"
-                        #   "blc27_guppi_58410_37136_195860_FRB181017_0001.0000.h5"
-                        #   "blc20_guppi_57991_66219_DIAG_FRB121102_0020.gpuspec.0001.fil"
-                        #   "guppi_58410_37136_195860_FRB181017_0001.0000.h5"
-                        #   "blc20_guppi_57991_66219_DIAG_FRB121102_0020.gpuspec.0001.fil"
+                        default="../../filterbank/misc/"
+                          # "voyager_f1032192_t300_v2.fil"
+                          # "blc27_guppi_58410_37136_195860_FRB181017_0001.0000.h5"
+                          "blc20_guppi_57991_66219_DIAG_FRB121102_0020.gpuspec.0001.fil"
                         # default="../../filterbank/blc07/blc07_guppi_57650_67573_Voyager1_0002.gpuspec.0000.fil"
                         # default="../../filterbank/blc03/blc3_2bit_guppi_57386_VOYAGER1_0002.gpuspec.0000.fil"
                         # default="../../filterbank/voyager1_rosetta_blc3/"
@@ -83,16 +81,24 @@ def main():
     logging.getLogger("blimpy.io.base_reader").setLevel(logging.DEBUG)
     logging.getLogger("blimpy").setLevel(logging.DEBUG)
 
-    obs_obj = blimpy.Waterfall(data_path, max_load=4)
+    # obs_obj = blimpy.Waterfall(data_path, max_load=8) # load_data=False)
+    # obs_obj.read_data(f_start=8420.2163, f_stop=8420.2166) # Voyager carrier only
+
     # plot areas of interest
     full_screen_dims=(16, 10)
-    obs_obj.plot_spectrum(logged=True)
-    plt.show()
+    # obs_obj.plot_spectrum(logged=True)
+    # plt.show()
     # obs_obj.plot_spectrum(f_start=5779, f_stop=6666,logged=True)
     # plt.show()
 
     perf_start = perf_counter()
-    obs_obj = blimpy.Waterfall(data_path, max_load=4, load_data=False)
+    obs_obj = blimpy.Waterfall(data_path, max_load=16) #, load_data=False)
+    # focus_freq_start = 8420.2163
+    # focus_freq_stop = 8420.2166
+    # obs_obj.read_data(f_start=focus_freq_start, f_stop=focus_freq_stop) # Voyager carrier only
+    # obs_obj.plot_spectrum(logged=True)
+    # obs_obj.plot_waterfall()
+    # plt.show()
 
     print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
 
@@ -150,8 +156,8 @@ def main():
 
 
     n_integrations_to_process = n_integrations_input
-    if n_integrations_input > 512:
-        n_integrations_to_process = 512
+    if n_integrations_input > 64:
+        n_integrations_to_process = 64
         print(f"clamping n_integrations_to_process to {n_integrations_to_process}")
 
     # tsamp is "Time integration sampling rate in seconds" (from rawspec)
@@ -170,22 +176,27 @@ def main():
 
     print(f"file nbits: {int(obs_obj.header['nbits'])}")
 
-    power_diffs = np.zeros((n_integrations_to_process,n_fine_chan))
 
     print(f"Load first integration from disk...")
     perf_start = perf_counter()
-    obs_obj.read_data(t_start=0, t_stop=1)
-
-
-    _, prior_ps = obs_obj.grab_data(t_start=0, t_stop=1)
+    print(f"shape of data: {obs_obj.data.shape}")
+    # obs_obj.read_data(t_start=0, t_stop=1)
+    # _, prior_ps = obs_obj.grab_data(t_start=0, t_stop=1)
+    prior_ps = obs_obj.data[0][0]
     print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
     print(f"one integration shape: {prior_ps.shape} ")
+
+    n_input_buckets = len(prior_ps)
+    if n_input_buckets != n_fine_chan:
+        print(f"processing subset: {n_input_buckets} / {n_fine_chan} fine channels")
+    power_diffs = np.zeros((n_integrations_to_process,n_input_buckets))
 
     print(f"Walking {n_integrations_to_process} integrations ...")
     perf_start = perf_counter()
     for int_idx in range(n_integrations_to_process):
         print(f"integration: {int_idx}")
-        cur_ps = grab_one_integration(obs_obj,int_idx)
+        # cur_ps = grab_one_integration(obs_obj,int_idx)
+        cur_ps = obs_obj.data[int_idx][0]
         cur_diff =  np.subtract(cur_ps, prior_ps) #prior_ps_normalized) # x1 - x2
         med_mag = np.average(np.abs(cur_diff))
         power_diffs[int_idx] = np.sign(cur_diff) * ((cur_diff * cur_diff) - (med_mag*med_mag))
@@ -194,21 +205,21 @@ def main():
     prior_ps = None
     print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
 
-    # we now have a huge array of num_integrations x num_fine_channels,
+    # we now have a huge array of n_integrations_to_process x num_fine_channels,
     # something like 16 x 1048576 difference values
     # need to decimate to make plotting work
 
     down_buckets = 2048
 
-    if n_fine_chan > down_buckets:
-        print(f"Decimating {n_fine_chan} fine channels to {down_buckets} buckets, ratio: {n_fine_chan / down_buckets} ...")
+    if n_input_buckets > down_buckets:
+        print(f"Decimating {n_input_buckets} fine channels to {down_buckets} buckets, ratio: {n_input_buckets / down_buckets} ...")
         perf_start = perf_counter()
         # decimated_data = np.array([scipy.signal.decimate(row, down_buckets, ftype='iir') for row in power_diffs])
         # decimated_data = np.array([scipy.signal.decimate(row, down_buckets, ftype='fir') for row in power_diffs])
         decimated_data = np.array([gaussian_decimate(row, down_buckets) for row in power_diffs])
         print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
     else:
-        down_buckets = n_fine_chan
+        down_buckets = n_input_buckets
         decimated_data = power_diffs
 
     power_diffs = None
@@ -224,9 +235,7 @@ def main():
     # my_dpi=300
     # full_screen_dims=(3024 / my_dpi, 1964 / my_dpi)
 
-
-
-    fig, axes = plt.subplots(nrows=2, figsize=full_screen_dims,  sharex=True) #constrained_layout=True,  sharex=True)
+    fig, axes = plt.subplots(nrows=2, figsize=full_screen_dims,  sharex=True, constrained_layout=True) #constrained_layout=True,  sharex=True)
     fig.subplots_adjust(hspace=0)
     fig.suptitle(f"{start_freq:0.4f} | {src_data_filename}")
 
@@ -235,10 +244,16 @@ def main():
     cmap1 = matplotlib.colormaps['inferno']
 
     img0 = axes[0].imshow(plot_data.T, aspect='auto', cmap='viridis') # interpolation='gaussian')
-    axes[0].grid(which='major', color=cmap1(0.5), linestyle='-', linewidth=1)
-
+    # axes[0].grid(which='major', color=cmap1(0.5), linestyle='-', linewidth=1)
     img1 = axes[1].imshow(plot_data.T, aspect='auto', cmap='inferno') # interpolation='gaussian')
-    axes[1].grid(which='major', color=cmap0(0.5), linestyle='-', linewidth=1)
+    axes[1].set_xlabel('Timestep')
+
+    y_bott, y_top = axes[0].get_ylim()
+    x_left, x_right = axes[0].get_xlim()
+    timescale_factor =  (x_right - x_left) / n_integrations_to_process
+    for time_step in range(n_integrations_to_process):
+        axes[0].axvline(x=timescale_factor*time_step, ymin=y_bott, ymax=y_top, color=cmap0(0.5), linewidth=1)
+        axes[1].axvline(x=timescale_factor*time_step, ymin=y_bott, ymax=y_top, color=cmap1(0.5), linewidth=1)
 
     cbar0 = fig.colorbar(img0, ax=axes[0])
     cbar0.set_label('Δ dB', rotation=270)
@@ -248,28 +263,21 @@ def main():
 
     yticks = axes[0].get_yticks()
     # print(f"axes0 yticks {yticks}")
-    tick_step_mhz = sampling_rate_mhz / len(yticks)
 
-    tick_freqs = np.arange(start_freq, stop_freq, tick_step_mhz)
-    # lower_buckets = np.where(freqs_decimated <= freq_of_interest)
-    # bucket_of_interest = np.max(lower_buckets)
+    # print(f"y_top: {y_top} y_bott: {y_bott}")
+    # tick_range_mhz = y_top - y_bott
+    # tick_step_mhz = tick_range_mhz / len(yticks)
+    # print(f"tick_range_mhz: {tick_range_mhz} tick_step_mhz: {tick_step_mhz}")
+    # tick_freqs = np.arange(y_top, y_bott, tick_step_mhz)
+    # print(f"tick_freqs {tick_freqs}")
 
-    # focus_freq_min = 8419.25 # 8419.29698
-    # focus_freq_max = 8419.35
-    # focus_lower = np.max(np.where(freqs_decimated <= focus_freq_min))
-    # focus_upper = np.max(np.where(freqs_decimated <= focus_freq_max))
+    # voy1_center = np.max(np.where(freqs_decimated <= 8420.2164490))
+    # axes[0].axhline(y=voy1_center, linewidth=2, color='blue', alpha=0.7)
 
-    # # axes[0].axhline(y=plot_data.shape[1] / 2 , linewidth=5, color='red',alpha=0.25)
-    # axes[0].axhline(y=focus_lower, linewidth=2, color='red', alpha=0.7)
-    # axes[0].axhline(y=focus_upper, linewidth=2, color='red', alpha=0.7)
-    # axes[1].axhline(y=focus_lower, linewidth=2, color='green', alpha=0.7)
-    # axes[1].axhline(y=focus_upper, linewidth=2, color='green', alpha=0.7)
-
-    # tick_freqs -= start_freq
-    ytick_labels = [f"{freq:0.4f}" for freq in tick_freqs]
-    print(f"ytick_labels: {ytick_labels}")
-    axes[0].set_yticklabels(ytick_labels)
-    axes[1].set_yticklabels(ytick_labels)
+    # ytick_labels = [f"{freq:0.6f}" for freq in tick_freqs]
+    # print(f"ytick_labels: {ytick_labels}")
+    # axes[0].set_yticklabels(ytick_labels)
+    # axes[1].set_yticklabels(ytick_labels)
     # axes[0].set_ylabel('Channel')
     # axes[1].set_ylabel('Channel')
 
@@ -279,7 +287,36 @@ def main():
     plt.savefig(img_save_path)
     plt.show()
 
+    all_time_corrs = np.zeros((n_integrations_to_process, n_integrations_to_process, plot_data.shape[1]))
+    extreme_time_corrs = np.zeros((n_integrations_to_process, n_integrations_to_process))
+    for test_pidx in range(n_integrations_to_process):
+        test_pdiff = plot_data[ test_pidx]
+        for int_idx in range(n_integrations_to_process):
+            if int_idx == test_pidx:
+                continue
+            cur_pdiff = plot_data[int_idx]
+            cur_corr = np.corrcoef(cur_pdiff, test_pdiff)
+            # all_time_corrs[test_pidx, int_idx] = cur_corr[0][1]
+            extreme_time_corrs[test_pidx,int_idx] = np.max(np.abs(cur_corr[0][1]))
 
+
+    # print(f"all_time_corrs: {all_time_corrs.shape}")
+    print(f"extreme_time_corrs: {extreme_time_corrs.shape}")
+
+    # Create X and Y coordinates
+    x = np.arange(extreme_time_corrs.shape[1])  # 16 points for X
+    y = np.arange(extreme_time_corrs.shape[0])  # 16 points for Y
+    X, Y = np.meshgrid(x, y)
+    Z = extreme_time_corrs  # Taking the first slice along the third dimension
+    ax = plt.figure(figsize=full_screen_dims).add_subplot(111, projection='3d')
+    ax.plot_surface(X, Y, Z, edgecolor='royalblue', lw=0.5, rstride=8, cstride=8, alpha=0.3)
+    # x, y, z = all_time_corrs.nonzero()
+    # print(f"z vals: {z}")
+
+    # ax.scatter(x, y, z, c=z, alpha=1)
+    # ax.plot(all_time_corrs[:,0],all_time_corrs[:,1],all_time_corrs[:,2])
+
+    plt.show()
 
 
 if __name__ == "__main__":
