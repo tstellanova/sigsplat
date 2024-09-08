@@ -17,14 +17,15 @@ import sigmf
 from matplotlib.ticker import StrMethodFormatter
 from sigmf import sigmffile, SigMFFile
 from blimpy import Waterfall
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
+matplotlib.use('qtagg')
 
 def main():
 
     parser = argparse.ArgumentParser(description='Analyze filterbank file')
     parser.add_argument('src_data_path', nargs='?',
                         help="Source hdf5 (.h5) or filerbank (.fil) file path",
-                        default="./../filterbank/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.h5"
+                        default="../../filterbank/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.h5"
                         )
     args = parser.parse_args()
 
@@ -79,7 +80,10 @@ def main():
     print(f"one_sample dtype: {np.dtype(one_sample)} iscomplex: {np.iscomplex(one_sample)}")
     # two_sample = obs_obj.data[0,0,0]
     # print(f"two_sample: {two_sample} dtype: {np.dtype(two_sample)} iscomplex: {np.iscomplex(two_sample)}")
-
+    plt.figure(figsize=(16,10), constrained_layout=True)
+    obs_obj.plot_spectrum(logged=True)
+    obs_obj.plot_waterfall()
+    plt.show()
 
 
 if __name__ == "__main__":
