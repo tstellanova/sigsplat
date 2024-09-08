@@ -13,16 +13,16 @@ import matplotlib
 # this might only be necessary on macos: run eg 'pip install PyQt5' first
 matplotlib.use('qtagg')
 
-obs = Waterfall('./data/voyager_f1032192_t300_v2.fil')
+obs = Waterfall('../../filterbank/misc/voyager_f1032192_t300_v2.fil')
 obs.info()
 # this the data printed by obs.info:
 pprint(obs.header)
 print("obs data shape: ", obs.data.shape)
 
-print("n_coarse_chan: ", obs.calc_n_coarse_chan(2.94))
-r = GuppiRaw('./data/blc03_samples/blc3_guppi_57386_VOYAGER1_0004.0000.raw')
-first_header = r.read_first_header()
-pprint(first_header)
+# print("n_coarse_chan: ", obs.calc_n_coarse_chan(2.94))
+# r = GuppiRaw('./data/blc03_samples/blc3_guppi_57386_VOYAGER1_0004.0000.raw')
+# first_header = r.read_first_header()
+# pprint(first_header)
 # r.find_n_data_blocks()
 # r.read_next_data_block_shape()
 # r.plot_spectrum()
@@ -73,6 +73,7 @@ pol_mag = np.sqrt(pol_delta)
 
 # plot a narrow area around frequency of interest
 plt.figure(figsize=full_screen_dims)
+# fig, axes = plt.subplots(nrows=3, figsize=full_screen_dims,  sharex=True)
 plt.subplot(3,1,1)
 plt.xticks(rotation=-45, ha="left")
 obs.plot_spectrum(f_start=8420.193, f_stop=8420.195) # left sideband

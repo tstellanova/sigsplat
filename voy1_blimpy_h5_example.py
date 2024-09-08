@@ -25,11 +25,9 @@ matplotlib.use('qtagg')
 def main():
 
     parser = argparse.ArgumentParser(description='Analyze HDF5 file')
-    parser.add_argument('--src_data_path',
+    parser.add_argument('src_data_path', nargs='?',
                         help="Source hdf5 (.h5) file path",
-                        default="./data/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.h5"
-                        # default="./data/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.fil"
-                        # default="./data/blc07_samples/blc07_guppi_57650_67573_Voyager1_0002.gpuspec.0000.fil"
+                        default="../../filterbank/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.h5"
                         )
     args = parser.parse_args()
 
