@@ -25,6 +25,8 @@ def main():
     parser = argparse.ArgumentParser(description='Analyze filterbank file')
     parser.add_argument('src_data_path', nargs='?',
                         help="Source hdf5 (.h5) or filerbank (.fil) file path",
+                        # default="../../filterbank/blgcsurvey_cband/"
+                        #     "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_18741_BLGCsurvey_Cband_A00_0063.gpuspec.0002.fil"
                         default="../../filterbank/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.h5"
                         )
     args = parser.parse_args()
@@ -57,6 +59,7 @@ def main():
     print(f"data shape: {obs_obj.data.shape} , nbits: {int(obs_obj.header['nbits'])} , freqs per integration: {len(obs_obj.data[0][0])}")
 
     # validate that the input file data shape matches expectations set by header
+    # TODO this all explodes for very large data files where the Waterfall constructor can't load all the data
     assert n_integrations_input == obs_obj.data.shape[0]
     assert n_polarities_stored == obs_obj.data.shape[1]
     assert n_fine_chan == obs_obj.data.shape[2]
@@ -80,9 +83,20 @@ def main():
     print(f"one_sample dtype: {np.dtype(one_sample)} iscomplex: {np.iscomplex(one_sample)}")
     # two_sample = obs_obj.data[0,0,0]
     # print(f"two_sample: {two_sample} dtype: {np.dtype(two_sample)} iscomplex: {np.iscomplex(two_sample)}")
-    plt.figure(figsize=(16,10), constrained_layout=True)
-    obs_obj.plot_spectrum(logged=True)
+    fig = plt.figure(figsize=(16,10), constrained_layout=True)
+    # plot one spectrum
+    obs_obj.plot_spectrum(logged=True, t=n_integrations_input//2)
+
     obs_obj.plot_waterfall()
+
+    # overlay one fine line per time step
+    ax0 = fig.get_axes()[0]
+    y_bott, y_top = ax0.get_ylim()
+    cmap0 = matplotlib.colormaps['viridis']
+    timescale_factor =  (y_top - y_bott) / n_integrations_input
+    for time_step in range(n_integrations_input):
+        ax0.axhline(y=timescale_factor*time_step, xmin=0, xmax=25, color=cmap0(0.5))
+
     plt.show()
 
 
