@@ -18,10 +18,10 @@ from scipy.fftpack import fft
 from scipy.ndimage import gaussian_filter1d
 
 matplotlib.use('qtagg')
-MAX_PLT_POINTS = 65536 * 4  # Max number of points in matplotlib plot
 
-def safe_log(data):
-    return np.log10(np.abs(data) + sys.float_info.epsilon) * np.sign(data)
+def safe_scale_log(data):
+    return 10 * np.sign(data) * np.log10(np.abs(data) + sys.float_info.epsilon)
+
 def gaussian_decimate(data, num_out_buckets, sigma=1.0):
     # Step 1: Apply Gaussian filter
     filtered_data = gaussian_filter1d(data, sigma=sigma)
@@ -32,72 +32,77 @@ def gaussian_decimate(data, num_out_buckets, sigma=1.0):
 
     return decimated_data
 
-def process_dual_pol_block(n_chans=0, data_pol_a=None, data_pol_b=None):
+def process_dual_pol_block( chan_idx: int = 0, data_pol_a=None, data_pol_b=None):
+    if data_pol_a is None:
+        data_pol_a = []
+    if data_pol_b is None:
+        data_pol_b = []
 
-    min_pol_a, max_pol_a = np.min(data_pol_a) , np.max(data_pol_a)
-    min_pol_b, max_pol_b = np.min(data_pol_b) , np.max(data_pol_b)
-    # print(f">>> data_pol_a {data_pol_a.shape} {data_pol_a.dtype} min: {min_pol_a} max: {max_pol_a}")
-    # print(f">>> data_pol_B {data_pol_b.shape} {data_pol_b.dtype} min: {min_pol_b} max: {max_pol_b}")
+    samples_per_chan_per_block = data_pol_a.shape[1]
+    cur_psd = np.zeros(samples_per_chan_per_block, dtype=np.float32)
 
-    samples_per_block = data_pol_a.shape[1]
-    output_shape = (n_chans, samples_per_block)
-    ffts = np.zeros(output_shape, dtype=np.complex64)
-    psds = np.zeros(output_shape, dtype=np.float32)
-    # window_func = np.hamming(samples_per_block)
-    for chan_idx in range(n_chans):
-        chan_pol_a =  data_pol_a[chan_idx]
-        chan_pol_b =  data_pol_b[chan_idx]
-        # print(f"chan_pol_a: {chan_pol_a.shape} min: {np.min(chan_pol_a)} max: {np.max(chan_pol_a)}")
-        # print(f"chan_pol_b: {chan_pol_b.shape} min: {np.min(chan_pol_b)} max: {np.max(chan_pol_b)}")
+    # get the data for the channel of interest
+    chan_pol_a = data_pol_a[chan_idx]
+    chan_pol_b = data_pol_b[chan_idx]
+    # For 8 bit samples, each complex sample consists of two bytes:
+    # one byte for real followed by one byte for imaginary.
+    chan_pol_a_iq = chan_pol_a.flatten()
+    chan_pol_b_iq = chan_pol_b.flatten()
 
-        # For 8 bit samples, each complex sample consists of two bytes:
-        # one byte for real followed by one byte for imaginary.
-        chan_pol_a_iq = chan_pol_a.flatten()
-        chan_pol_b_iq = chan_pol_b.flatten()
-        # print(f"chan_pol_a_iq {chan_pol_a_iq.shape}")
+    # TODO can we jump straight to view complex64 without recasting?
+    chan_pol_a_view = chan_pol_a_iq.astype(np.float32).view('complex64')
+    # print(f"chan_pol_a_view {chan_pol_a_view.shape}")
+    chan_pol_b_view = chan_pol_b_iq.astype(np.float32).view('complex64')
 
-        # renorm_iq = chan_pol_a_iq.astype(np.float32)
-        # print(f"renorm_iq: {renorm_iq.shape}")
+    N = len(chan_pol_a_view)
+    assert N == samples_per_chan_per_block
+    eff_N = scipy.fft.next_fast_len(N)
 
-        # TODO can we jump straight to view complex64 without recasting?
-        chan_pol_a_view = chan_pol_a_iq.astype(np.float32).view('complex64')
-        # print(f"chan_pol_a_view {chan_pol_a_view.shape}")
-        chan_pol_b_view = chan_pol_b_iq.astype(np.float32).view('complex64')
-
-        N = len(chan_pol_a_view)
-        assert N == samples_per_block
-        eff_N = scipy.fft.next_fast_len(N)
-
-        # Apply window to taper edges to zero
-        # TODO alternately use a larger FFT?
-        # chan_pol_a_view = chan_pol_a_view * window_func
-        # chan_pol_b_view = chan_pol_b_view * window_func
-
-        # use a larger output bucket to force padding with zeroes (fixes circularity)
-        # chan_pol_a_fft = fft(chan_pol_a_view, n=N * 2)
-        # chan_pol_a_fft = fft(chan_pol_a_view)
-        # chan_pol_b_fft = fft(chan_pol_b_view)
-        chan_pol_a_fft = np.fft.fft(chan_pol_a_view, n=eff_N) #n=N * 2)
-        fft_res_len = len(chan_pol_a_fft)
+    # TODO verify eff_N is adequate to fix circularity
+    chan_pol_a_fft = np.fft.fft(chan_pol_a_view, n=eff_N, norm='forward')
+    chan_pol_b_fft = np.fft.fft(chan_pol_b_view, n=eff_N, norm='forward')
+    fft_res_len = len(chan_pol_a_fft)
+    if fft_res_len != N:
         # print(f"original N: {N} / fft_res_len: {fft_res_len}")
         chan_pol_a_fft = chan_pol_a_fft[:N]
-        chan_pol_b_fft = np.fft.fft(chan_pol_b_view, n=eff_N) #n=N * 2)
         chan_pol_b_fft = chan_pol_b_fft[:N]
 
-        chan_pol_a_psd = chan_pol_a_fft * np.conj(chan_pol_a_fft)
-        # print(f"chan_pol_a_fft: {chan_pol_a_fft.shape}  chan_pol_a_psd: {chan_pol_a_psd.shape}")
-        chan_pol_b_psd = chan_pol_b_fft * np.conj(chan_pol_b_fft)
-        # add power from both polarities to get total power
-        sum_psd = np.abs(chan_pol_b_psd + chan_pol_a_psd)
-        # TODO useful? ffts[chan_idx] = chan_pol_a_fft
-        psds[chan_idx] = sum_psd
+    # Calculate Power Spectrum from (complex) FFT results
+    chan_pol_a_psd = chan_pol_a_fft * np.conj(chan_pol_a_fft)
+    chan_pol_b_psd = chan_pol_b_fft * np.conj(chan_pol_b_fft)
+    # add power from both polarities to get total power
+    sum_psd = np.abs(chan_pol_b_psd + chan_pol_a_psd)
+    cur_psd = sum_psd
 
-    min_psd = np.min(psds)
-    max_psd = np.max(psds)
+    min_psd = np.min(cur_psd)
+    max_psd = np.max(cur_psd)
     print(f"min_psd: {min_psd:0.3e} max_psd: {max_psd:0.3e}")
 
-    return ffts, psds
+    return cur_psd
 
+def process_chan_over_all_blocks(raw_reader=None, chan_idx=0, n_blocks=1):
+    focus_chan_psd_diffs = None
+    prior_psd = None
+    print(f"Processing chan {chan_idx} over n_data_blocks: {n_blocks}")
+    for block_idx in range(0, n_blocks):
+        print(f"process block {block_idx} / {n_blocks}")
+        _block_hdr, data_pol_a, data_pol_b = raw_reader.read_next_data_block_int8()
+        if 0 == block_idx:
+            print(f"samples_per_chan_per_block: {data_pol_a.shape[1]}")
+        cur_psd = process_dual_pol_block(chan_idx, data_pol_a, data_pol_a)
+        if focus_chan_psd_diffs is None:
+            focus_chan_psd_diffs = np.zeros( (n_blocks, len(cur_psd) ) )
+            print(f"focus_chan_psd_diffs: {focus_chan_psd_diffs.shape}")
+
+        # only save the psd from the focus coarse channel
+        if prior_psd is None:
+            prior_psd = cur_psd
+            continue
+        cur_psd_diff = np.subtract(cur_psd, prior_psd)
+        focus_chan_psd_diffs[block_idx] = cur_psd_diff
+        prior_psd = cur_psd
+
+    return focus_chan_psd_diffs
 
 def main():
     parser = argparse.ArgumentParser(description='Analyze GUPPI file')
@@ -147,7 +152,7 @@ def main():
     n_bits = int(first_header['NBITS'])
     block_size = int(first_header['BLOCSIZE'])
     # NTIME = BLOCSIZE * 8 / (2 * NPOL * NCHAN * NBITS)
-    ntime_calc = block_size * 8 / ( 2 * n_pols * n_coarse_chans * n_bits)
+    ntime_calc = block_size * 8 / (2 * n_pols * n_coarse_chans * n_bits)
     print(f"NTIME: {ntime_calc} BLOCSIZE: {block_size} NPOL: {n_pols} NCHAN: {n_coarse_chans} NBITS: {n_bits}")
 
     if n_pols > 2:
@@ -155,8 +160,6 @@ def main():
 
     lowest_obs_freq_mhz = highest_obs_freq_mhz - total_obs_bw_mhz
     print(f"avail freq range: {lowest_obs_freq_mhz}... {highest_obs_freq_mhz}")
-
-    r.reset_index()
 
     # first_header: {
     # 'BACKEND': 'GUPPI', 'TELESCOP': 'GBT', 'OBSERVER': 'Andrew Siemion', 'PROJID': 'AGBT16A_999_17',
@@ -192,7 +195,6 @@ def main():
     # For 8 bit samples, each complex sample consists of two bytes:
     # one byte for real followed by one byte for imaginary.
 
-
     # After the header, there is a block of binary data containing several samples
     # from each of the output channels of the polyphase filterbank.
     # They are stored as an array ordered by channel, time, and polarization.
@@ -215,49 +217,30 @@ def main():
     # Note that NTIME is usually not present in the header, but can be calculated as:
     # NTIME = BLOCSIZE * 8 / (2 * NPOL * NCHAN * NBITS)
 
-    print(f"Consuming n_data_blocks: {n_data_blocks} n_coarse_chans: {n_coarse_chans}")
-    n_blocks_read = 0
+    # reset the file index before we process all the relevant blocks
+    r.reset_index()
 
-    focus_coarse_chan_idx = int(n_coarse_chans // 2)
-    focus_chan_psd_diffs = None
-    prior_psd = None
-    for block_idx in range(0,  n_data_blocks):
-        block_hdr, data_pol_A, data_pol_B = r.read_next_data_block_int8()
-        _ffts, psds = process_dual_pol_block(n_coarse_chans, data_pol_A, data_pol_B)
-        n_blocks_read += 1
-        if focus_chan_psd_diffs is None:
-            focus_chan_psd_diffs = np.zeros((n_data_blocks, psds.shape[1]))
-            print(f"focus_chan_psd_diffs: {focus_chan_psd_diffs.shape}")
+    test_chan_idx = int(n_coarse_chans // 2)
+    print(f"Processing channel {test_chan_idx} (of {n_coarse_chans} ) over n_data_blocks: {n_data_blocks}")
+    focus_chan_psd_diffs = process_chan_over_all_blocks(r, test_chan_idx, n_data_blocks)
 
-
-
-        # only save the psd from the focus coarse channel
-        cur_psd = psds[focus_coarse_chan_idx]
-        if prior_psd is None:
-            prior_psd = cur_psd
-            continue
-        cur_psd_diff = np.subtract(cur_psd, prior_psd)
-        focus_chan_psd_diffs[block_idx] = cur_psd_diff
-        # print(f"psds: {focus_chan_psd_diffs[block_idx].shape}")
-        prior_psd = cur_psd
-
-    down_buckets =  1024
+    # decimate the huge number of coarse chan samples per block to something manageable
+    down_buckets = 1024
+    print(f"decimating {focus_chan_psd_diffs.shape[1]} to {down_buckets}")
     dec_diffs = np.array([gaussian_decimate(row, down_buckets) for row in focus_chan_psd_diffs])
-    psd_diffs_scaled = 10*safe_log(dec_diffs)
+    log_psd_diffs = safe_scale_log(dec_diffs)
 
-    psd_diffs_scaled[np.abs(psd_diffs_scaled) < 50] = 0
-    # thresholded_psd_diffs = np.where( np.abs(psd_diffs_scaled) < 50, 0, psd_diffs_scaled)
-    # thresholded_psd_diffs = np.clip(thresholded_psd_diffs, a_min=-50, a_max=50)
+    display_file_name =  os.path.basename(data_file_name)
 
     while True:
-        full_screen_dims=(16, 10)
-        fig, axes = plt.subplots(nrows=2, figsize=full_screen_dims,  constrained_layout=True,  sharex=True)
+        full_screen_dims = (16, 10)
+        fig, axes = plt.subplots(nrows=2, figsize=full_screen_dims, constrained_layout=True, sharex=True)
         # fig.subplots_adjust(hspace=0)
-        fig.suptitle(f"{lowest_obs_freq_mhz:0.4f} | {data_file_name}")
+        fig.suptitle(f"chan {test_chan_idx} PSD diffs| {display_file_name}")
 
-        img0 = axes[0].imshow(psd_diffs_scaled, aspect='auto', cmap='viridis')
+        img0 = axes[0].imshow(log_psd_diffs, aspect='auto', cmap='viridis')
         axes[0].set_ylabel('Block')
-        img1 = axes[1].imshow(psd_diffs_scaled, aspect='auto', cmap='inferno')
+        img1 = axes[1].imshow(log_psd_diffs, aspect='auto', cmap='inferno')
         axes[1].set_ylabel('Block')
         axes[1].set_xlabel('Freq Bin')
         cbar0 = fig.colorbar(img0, ax=axes[0])
@@ -268,8 +251,6 @@ def main():
 
         plt.show()
         return
-
-
 
 
 if __name__ == "__main__":
