@@ -10,21 +10,24 @@ import matplotlib.pyplot as plt
 import sys
 
 import numpy as np
-import scipy
 from blimpy import GuppiRaw
 import os
-from scipy.signal import welch
-from scipy.fftpack import fft
-from scipy.ndimage import gaussian_filter1d
+
+from scipy import ndimage
+from scipy.optimize import dual_annealing
+
+from time import perf_counter
 
 matplotlib.use('qtagg')
+
+
 
 def safe_scale_log(data):
     return 10 * np.sign(data) * np.log10(np.abs(data) + sys.float_info.epsilon)
 
 def gaussian_decimate(data, num_out_buckets, sigma=1.0):
     # Step 1: Apply Gaussian filter
-    filtered_data = gaussian_filter1d(data, sigma=sigma)
+    filtered_data = ndimage.gaussian_filter1d(data, sigma=sigma)
 
     # Step 2: Decimate (downsample)
     decimation_factor = len(data) // num_out_buckets
@@ -32,77 +35,135 @@ def gaussian_decimate(data, num_out_buckets, sigma=1.0):
 
     return decimated_data
 
-def process_dual_pol_block( chan_idx: int = 0, data_pol_a=None, data_pol_b=None):
-    if data_pol_a is None:
-        data_pol_a = []
-    if data_pol_b is None:
-        data_pol_b = []
+def process_dual_pol_block(chan_pol_a=None, chan_pol_b=None, n_freq_bins=1024, n_vps_rows_per_block=1):
+    if chan_pol_a is None:
+        chan_pol_a = []
+    if chan_pol_b is None:
+        chan_pol_b = []
 
-    samples_per_chan_per_block = data_pol_a.shape[1]
-    cur_psd = np.zeros(samples_per_chan_per_block, dtype=np.float32)
-
-    # get the data for the channel of interest
-    chan_pol_a = data_pol_a[chan_idx]
-    chan_pol_b = data_pol_b[chan_idx]
+    all_block_vps = []
+    all_block_corrs = []
     # For 8 bit samples, each complex sample consists of two bytes:
     # one byte for real followed by one byte for imaginary.
     chan_pol_a_iq = chan_pol_a.flatten()
     chan_pol_b_iq = chan_pol_b.flatten()
 
-    # TODO can we jump straight to view complex64 without recasting?
+    # TODO can we jump straight to view complex64 without intermediate astype?
     chan_pol_a_view = chan_pol_a_iq.astype(np.float32).view('complex64')
     # print(f"chan_pol_a_view {chan_pol_a_view.shape}")
     chan_pol_b_view = chan_pol_b_iq.astype(np.float32).view('complex64')
+    # assert samples_per_chan_per_block == len(chan_pol_a_view)
 
-    N = len(chan_pol_a_view)
-    assert N == samples_per_chan_per_block
-    eff_N = scipy.fft.next_fast_len(N)
+    # treat the arbitrary block size as a series of sample rows
+    newshape = (n_vps_rows_per_block, n_freq_bins)
+    # print(f"reshape pol_views: {chan_pol_a_view.shape} to {newshape}")
+    chan_pol_a_view = np.reshape(chan_pol_a_view, newshape)
+    chan_pol_b_view = np.reshape(chan_pol_b_view, newshape)
+    # print(f"chan_pol_a_view {chan_pol_a_view.shape}")
 
-    # TODO verify eff_N is adequate to fix circularity
-    chan_pol_a_fft = np.fft.fft(chan_pol_a_view, n=eff_N, norm='forward')
-    chan_pol_b_fft = np.fft.fft(chan_pol_b_view, n=eff_N, norm='forward')
-    fft_res_len = len(chan_pol_a_fft)
-    if fft_res_len != N:
-        # print(f"original N: {N} / fft_res_len: {fft_res_len}")
-        chan_pol_a_fft = chan_pol_a_fft[:N]
-        chan_pol_b_fft = chan_pol_b_fft[:N]
+    # window_filter = np.hamming(n_freq_bins)
+    window_filter = np.hanning(n_freq_bins)
 
-    # Calculate Power Spectrum from (complex) FFT results
-    chan_pol_a_psd = chan_pol_a_fft * np.conj(chan_pol_a_fft)
-    chan_pol_b_psd = chan_pol_b_fft * np.conj(chan_pol_b_fft)
-    # add power from both polarities to get total power
-    sum_psd = np.abs(chan_pol_b_psd + chan_pol_a_psd)
-    cur_psd = sum_psd
+    # # Define the taper length (number of points to taper at the beginning and end)
+    # taper_length = int(n_freq_bins // 10)  # 10% taper at both ends
+    #
+    # # Create the taper function (cosine taper)
+    # taper = np.ones(n_freq_bins)
+    # taper[:taper_length] = 0.5 * (1 - np.cos(np.linspace(0, np.pi, taper_length)))
+    # taper[-taper_length:] = 0.5 * (1 - np.cos(np.linspace(np.pi, 0, taper_length)))
+    # window_filter = taper
 
-    min_psd = np.min(cur_psd)
-    max_psd = np.max(cur_psd)
-    print(f"min_psd: {min_psd:0.3e} max_psd: {max_psd:0.3e}")
+    print(f"Calc VPS for {n_vps_rows_per_block} block rows...")
+    perf_start = perf_counter()
+    for psd_row_idx in range(0, n_vps_rows_per_block):
+        # apply window filter to fix circularity
+        chunk_a = chan_pol_a_view[psd_row_idx]
+        chunk_a = chunk_a * window_filter
+        chunk_b = chan_pol_b_view[psd_row_idx]
+        chunk_b = chunk_b * window_filter
+        row_pol_a_fft = np.fft.fft(chunk_a, n=n_freq_bins)
+        row_pol_b_fft = np.fft.fft(chunk_b, n=n_freq_bins)
+        fft_res_len = len(row_pol_a_fft)
+        if fft_res_len != n_freq_bins:
+            print(f"original N: {n_freq_bins} / fft_res_len: {fft_res_len}")
+            row_pol_a_fft = row_pol_a_fft[:n_freq_bins]
+            row_pol_b_fft = row_pol_b_fft[:n_freq_bins]
 
-    return cur_psd
+        # Calculate Voltage Power Spectrum from (complex) FFT results
+        chan_pol_a_vps = (row_pol_a_fft * np.conj(row_pol_a_fft)) / n_freq_bins
+        chan_pol_b_vps = (row_pol_b_fft * np.conj(row_pol_b_fft)) / n_freq_bins
 
-def process_chan_over_all_blocks(raw_reader=None, chan_idx=0, n_blocks=1):
-    focus_chan_psd_diffs = None
-    prior_psd = None
+        # calculate the elementwise correlation between polarizations (noise should be uncorrelated)
+        chan_pol_a_vps_norm = (chan_pol_a_vps - np.mean(chan_pol_a_vps)) / np.std(chan_pol_a_vps)
+        chan_pol_b_vps_norm = (chan_pol_b_vps - np.mean(chan_pol_b_vps)) / np.std(chan_pol_b_vps)
+        cur_vps_corr = np.multiply(chan_pol_a_vps_norm, chan_pol_b_vps_norm)
+        # use "elementwise correlation" as a threshold
+        # cur_vps_corr = np.where(raw_corr < 0.5, 0.0, 1.0)
+        avg_corr = np.average(np.abs(cur_vps_corr))
+        all_block_corrs.append(avg_corr)
+
+        # we sum the power from both polarizations and scale by how correlated they are
+        sum_vps = chan_pol_a_vps + chan_pol_b_vps
+        cur_vps = np.abs(np.multiply(sum_vps, np.sqrt(cur_vps_corr)))
+        all_block_vps.append(cur_vps)
+
+    all_corrs = np.asarray(all_block_corrs)
+    print(f"block corr min: {np.min(all_corrs):0.4f} max: {np.max(all_corrs):0.4f} avg: {np.average(all_corrs):0.4f}")
+    res_all_block_vps = np.asarray(all_block_vps)
+    print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
+
+    return res_all_block_vps
+
+def process_chan_over_all_blocks(raw_reader=None, chan_idx=0, n_blocks=1, n_freq_bins=1024):
+    focus_chan_vps_diffs = []
+    all_focus_chan_vps = []
+    prior_vps = None
+    n_psd_rows_per_block = None
+    vps_row_idx = 0
     print(f"Processing chan {chan_idx} over n_data_blocks: {n_blocks}")
     for block_idx in range(0, n_blocks):
-        print(f"process block {block_idx} / {n_blocks}")
+        print(f"read block {block_idx} / {n_blocks} ...")
+        perf_start = perf_counter()
         _block_hdr, data_pol_a, data_pol_b = raw_reader.read_next_data_block_int8()
-        if 0 == block_idx:
-            print(f"samples_per_chan_per_block: {data_pol_a.shape[1]}")
-        cur_psd = process_dual_pol_block(chan_idx, data_pol_a, data_pol_a)
-        if focus_chan_psd_diffs is None:
-            focus_chan_psd_diffs = np.zeros( (n_blocks, len(cur_psd) ) )
-            print(f"focus_chan_psd_diffs: {focus_chan_psd_diffs.shape}")
+        print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
 
-        # only save the psd from the focus coarse channel
-        if prior_psd is None:
-            prior_psd = cur_psd
-            continue
-        cur_psd_diff = np.subtract(cur_psd, prior_psd)
-        focus_chan_psd_diffs[block_idx] = cur_psd_diff
-        prior_psd = cur_psd
+        chan_pol_a = data_pol_a[chan_idx]
+        chan_pol_b = data_pol_b[chan_idx]
 
-    return focus_chan_psd_diffs
+        if n_psd_rows_per_block is None:
+            print(f"chan_pol_a : {chan_pol_a.shape}")
+            samples_per_chan_per_block = chan_pol_a.shape[0]
+            n_psd_rows_per_block = int(samples_per_chan_per_block // n_freq_bins)
+            n_psd_rows = int(n_blocks * n_psd_rows_per_block)
+            print(f"n_blocks: {n_blocks} samples_per_chan_per_block: {samples_per_chan_per_block} "
+                  f"n_freq_bins: {n_freq_bins} n_psd_rows_per_block: {n_psd_rows_per_block} n_psd_rows: {n_psd_rows}")
+
+        all_block_vps = process_dual_pol_block(chan_pol_a, chan_pol_b, n_freq_bins, n_psd_rows_per_block)
+        # print(f"all_block_vps {all_block_vps.shape}")
+
+        print(f"Calculate {len(all_block_vps)} VPS diffs...")
+        perf_start = perf_counter()
+        for cur_vps in all_block_vps:
+            # print(f"cur_vps {cur_vps.shape}")
+            all_focus_chan_vps.append(cur_vps)
+            if prior_vps is None:
+                # the zeroth psd_diff will always be zero
+                prior_vps = cur_vps
+                vps_row_idx += 1
+                continue
+            # print(f"cur_vps {cur_vps.shape} prior_vps {prior_vps.shape}")
+            cur_vps_diff = np.subtract(cur_vps, prior_vps)
+            # print(f"cur_vps_diff {cur_vps_diff.shape} focus_chan_vps_diffs[vps_row_idx] {focus_chan_vps_diffs[vps_row_idx].shape}")
+            focus_chan_vps_diffs.append(cur_vps_diff)
+            prior_vps = cur_vps
+            vps_row_idx += 1
+        print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
+
+    all_chan_vps = np.asarray(all_focus_chan_vps)
+    all_chan_vps_diffs = np.asarray(focus_chan_vps_diffs)
+    # print(f"all_chan_vps_diffs {all_chan_vps_diffs}")
+
+    return all_chan_vps, all_chan_vps_diffs
 
 def main():
     parser = argparse.ArgumentParser(description='Analyze GUPPI file')
@@ -121,12 +182,12 @@ def main():
 
     r = GuppiRaw(data_file_name)
     # Seek through the file to find how many data blocks there are in the file
-    max_data_blocks = 256
+    max_blocks = 4
     n_data_blocks = r.find_n_data_blocks()
     print(f"total n_data_blocks: {n_data_blocks}")
-    if n_data_blocks > max_data_blocks:
-        print(f"clamping to {max_data_blocks} blocks")
-        n_data_blocks = max_data_blocks
+    if n_data_blocks > max_blocks:
+        print(f"clamping to {max_blocks} blocks")
+        n_data_blocks = max_blocks
 
     # reads the first header and then seek to file offset zero
     first_header = r.read_first_header()
@@ -220,34 +281,65 @@ def main():
     # reset the file index before we process all the relevant blocks
     r.reset_index()
 
-    test_chan_idx = int(n_coarse_chans // 2)
+    test_chan_idx = int(n_coarse_chans // 4)
     print(f"Processing channel {test_chan_idx} (of {n_coarse_chans} ) over n_data_blocks: {n_data_blocks}")
-    focus_chan_psd_diffs = process_chan_over_all_blocks(r, test_chan_idx, n_data_blocks)
+    n_freq_bins = 64 #TODO calculate a reasonable value
+    focus_chan_psds, focus_chan_psd_diffs = process_chan_over_all_blocks(r, test_chan_idx, n_data_blocks, n_freq_bins)
+    max_psd_diff = np.max(focus_chan_psd_diffs)
+    min_psd_diff = np.min(focus_chan_psd_diffs)
+    print(f"psd_diff min: {min_psd_diff} max: {max_psd_diff}")
+    # diff_scale = max([np.abs(max_psd_diff), np.abs(min_psd_diff)])
+    # focus_chan_psd_diffs /= diff_scale # normalize
+
 
     # decimate the huge number of coarse chan samples per block to something manageable
-    down_buckets = 1024
-    print(f"decimating {focus_chan_psd_diffs.shape[1]} to {down_buckets}")
-    dec_diffs = np.array([gaussian_decimate(row, down_buckets) for row in focus_chan_psd_diffs])
-    log_psd_diffs = safe_scale_log(dec_diffs)
+    # down_buckets = 1024
+    # print(f"decimating {focus_chan_psd_diffs.shape[1]} to {down_buckets}")
+    # dec_diffs = np.array([gaussian_decimate(row, down_buckets) for row in focus_chan_psd_diffs])
 
-    display_file_name =  os.path.basename(data_file_name)
+    # use log scale for plot
+    print(f"log scale...")
+    perf_start = perf_counter()
+    log_psd_diffs = safe_scale_log(focus_chan_psd_diffs)
+    # log_psds = safe_scale_log(focus_chan_psds)
+    print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
+    # print(f"log_diffs: {log_psd_diffs}")
 
+    dilation_dim = int(n_freq_bins // 8)
+    dilation_size = (2*dilation_dim, dilation_dim)
+    dilated_ascents = ndimage.maximum_filter(log_psd_diffs, size=dilation_size)
+    # dilated_psds = ndimage.maximum_filter(log_psds, size=dilation_size)
+    # dilated_descents = ndimage.minimum_filter(log_psd_diffs, size=dilation_size)
+    dilated_diff_mag = ndimage.maximum_filter(np.abs(log_psd_diffs), size=dilation_size )
+    # dilated_diffs = np.add(dilated_ascents, np.abs(dilated_descents))
+    # dilated_diffs = dilate_extrema(log_psd_diffs)
+    # plot_data = dilated_descents
+
+
+    display_file_name = os.path.basename(data_file_name)
     while True:
         full_screen_dims = (16, 10)
-        fig, axes = plt.subplots(nrows=2, figsize=full_screen_dims, constrained_layout=True, sharex=True)
+        # fig = plt.figure(figsize=full_screen_dims, constrained_layout=True)
+        fig, axes = plt.subplots(nrows=2, figsize=full_screen_dims, constrained_layout=True, sharex=True,sharey=True)
         # fig.subplots_adjust(hspace=0)
         fig.suptitle(f"chan {test_chan_idx} PSD diffs| {display_file_name}")
-
-        img0 = axes[0].imshow(log_psd_diffs, aspect='auto', cmap='viridis')
-        axes[0].set_ylabel('Block')
-        img1 = axes[1].imshow(log_psd_diffs, aspect='auto', cmap='inferno')
-        axes[1].set_ylabel('Block')
-        axes[1].set_xlabel('Freq Bin')
+        # img0 = plt.imshow(plot_data.T, aspect='auto', cmap='inferno')
+        img0 = axes[0].imshow(dilated_ascents.T, aspect='auto', cmap='viridis')
+        # axes[0].set_ylabel('Freq bin')
+        img1 = axes[1].imshow(dilated_diff_mag.T, aspect='auto', cmap='inferno')
+        # axes[1].set_ylabel('Freq bin')
+        axes[1].set_xlabel('Time')
         cbar0 = fig.colorbar(img0, ax=axes[0])
-        cbar0.set_label('ΔPSD dB', rotation=270)
+        cbar0.set_label('ΔPSD dB', rotation=270, labelpad=15)
+        cbar0.ax.yaxis.set_ticks_position( 'left')
 
         cbar1 = fig.colorbar(img1, ax=axes[1])
-        cbar1.set_label('ΔPSD dB', rotation=270)
+        cbar1.set_label('abs(ΔPSD) dB', rotation=270, labelpad=15)
+        cbar1.ax.yaxis.set_ticks_position( 'left')
+
+        img_save_path = f"./img/pow_diffs/{display_file_name}.N{n_freq_bins}_sflux.png"
+        print(f"saving image to:\n{img_save_path} ...")
+        plt.savefig(img_save_path)
 
         plt.show()
         return
