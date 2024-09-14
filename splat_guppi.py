@@ -22,6 +22,9 @@ matplotlib.use('qtagg')
 
 
 
+def normalize_data(data):
+    return (data - np.mean(data)) / np.std(data)
+
 def safe_scale_log(data):
     return 10 * np.sign(data) * np.log10(np.abs(data) + sys.float_info.epsilon)
 
@@ -42,7 +45,7 @@ def process_dual_pol_block(chan_pol_a=None, chan_pol_b=None, n_freq_bins=1024, n
         chan_pol_b = []
 
     all_block_vps = []
-    all_block_corrs = []
+    # all_block_corrs = []
     # For 8 bit samples, each complex sample consists of two bytes:
     # one byte for real followed by one byte for imaginary.
     chan_pol_a_iq = chan_pol_a.flatten()
@@ -94,21 +97,21 @@ def process_dual_pol_block(chan_pol_a=None, chan_pol_b=None, n_freq_bins=1024, n
         chan_pol_b_vps = (row_pol_b_fft * np.conj(row_pol_b_fft)) / n_freq_bins
 
         # calculate the elementwise correlation between polarizations (noise should be uncorrelated)
-        chan_pol_a_vps_norm = (chan_pol_a_vps - np.mean(chan_pol_a_vps)) / np.std(chan_pol_a_vps)
-        chan_pol_b_vps_norm = (chan_pol_b_vps - np.mean(chan_pol_b_vps)) / np.std(chan_pol_b_vps)
-        cur_vps_corr = np.multiply(chan_pol_a_vps_norm, chan_pol_b_vps_norm)
+        chan_pol_a_vps_norm = normalize_data(chan_pol_a_vps)
+        chan_pol_b_vps_norm = normalize_data(chan_pol_b_vps)
+        raw_corr = np.multiply(chan_pol_a_vps_norm, chan_pol_b_vps_norm)
         # use "elementwise correlation" as a threshold
-        # cur_vps_corr = np.where(raw_corr < 0.5, 0.0, 1.0)
-        avg_corr = np.average(np.abs(cur_vps_corr))
-        all_block_corrs.append(avg_corr)
+        cur_vps_corr = np.where(raw_corr < 0.7, 0.0, 1.0)
+        # avg_corr = np.average(np.abs(cur_vps_corr))
+        # all_block_corrs.append(avg_corr)
 
         # we sum the power from both polarizations and scale by how correlated they are
         sum_vps = chan_pol_a_vps + chan_pol_b_vps
-        cur_vps = np.abs(np.multiply(sum_vps, np.sqrt(cur_vps_corr)))
+        cur_vps = np.abs(np.multiply(sum_vps,cur_vps_corr))
         all_block_vps.append(cur_vps)
 
-    all_corrs = np.asarray(all_block_corrs)
-    print(f"block corr min: {np.min(all_corrs):0.4f} max: {np.max(all_corrs):0.4f} avg: {np.average(all_corrs):0.4f}")
+    # all_corrs = np.asarray(all_block_corrs)
+    # print(f"block corr min: {np.min(all_corrs):0.4f} max: {np.max(all_corrs):0.4f} avg: {np.average(all_corrs):0.4f}")
     res_all_block_vps = np.asarray(all_block_vps)
     print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
 
@@ -170,7 +173,8 @@ def main():
     parser.add_argument('src_path', nargs='?',
                         help="Source raw file path eg 'blc21_guppi.raw' with the '.raw' file extension",
                         default="../../baseband/bloda/"
-                                "blc4_2bit_guppi_57432_24865_PSR_J1136+1551_0002.0001.raw"
+                                "guppi_58198_27514_685364_J0835-4510_B3_0001.0000.raw"
+                                # "blc4_2bit_guppi_57432_24865_PSR_J1136+1551_0002.0001.raw"
                         )
     parser.add_argument('-o', dest='outdir', type=str, default='./data',
                         help='Output directory processed files')
@@ -195,19 +199,22 @@ def main():
     highest_obs_freq_mhz = float(first_header['OBSFREQ'])
     print(f"highest_obs_freq_mhz {highest_obs_freq_mhz} MHz")
     n_coarse_chans = int(first_header['OBSNCHAN'])
-    chan_bw_mhz = float(first_header['CHAN_BW'])
+    # chan_bw_mhz = float(first_header['CHAN_BW'])
 
     # Per davidm, 'CHAN_BW': 2.9296875 (MHz) and 'TBIN': 3.41333333333e-07 should be inverses of each other
     time_bin = float(first_header['TBIN'])
-    verify_time_bin = 1 / (np.abs(chan_bw_mhz) * 1E6)
-    print(f"verify_tbin - time_bin: {verify_time_bin - time_bin:0.3e}")
+    print(f"TBIN: {time_bin:0.3e}")
+    # verify_time_bin = 1 / (np.abs(chan_bw_mhz) * 1E6)
+    # print(f"verify_tbin - time_bin: {verify_time_bin - time_bin:0.3e}")
     # assert verify_time_bin == time_bin
 
-    total_obs_bw_mhz = n_coarse_chans * np.abs(chan_bw_mhz)
-    obs_bw_mhz = np.abs(float(first_header['OBSBW']))
-    print(f"n_coarse_chans: {n_coarse_chans} chan_bw_mhz: {chan_bw_mhz} total_obs_bw_mhz: {total_obs_bw_mhz}")
-    # print(f"obs_bw_mhz: {obs_bw_mhz} total_obs_bw_mhz: {total_obs_bw_mhz} ")
-    assert obs_bw_mhz == total_obs_bw_mhz
+    total_obs_bw_mhz = np.abs(float(first_header['OBSBW']))
+
+    # total_obs_bw_mhz = n_coarse_chans * np.abs(chan_bw_mhz)
+    # obs_bw_mhz = np.abs(float(first_header['OBSBW']))
+    # print(f"n_coarse_chans: {n_coarse_chans} chan_bw_mhz: {chan_bw_mhz} total_obs_bw_mhz: {total_obs_bw_mhz}")
+    # # print(f"obs_bw_mhz: {obs_bw_mhz} total_obs_bw_mhz: {total_obs_bw_mhz} ")
+    # assert obs_bw_mhz == total_obs_bw_mhz
 
     n_pols = int(first_header['NPOL'])
     n_bits = int(first_header['NBITS'])
@@ -252,7 +259,9 @@ def main():
     # Normally 'AABBCRCI' for NPOL=4 coherence data,
     # where AA and BB are the direct products of the two input channels A and B,
     # and CR and CI are the real and imaginary parts of the cross product A* B.
-    assert first_header['POL_TYPE'] == 'AABBCRCI'
+    test_polarity = first_header.get('POL_TYPE')
+    if test_polarity is not None:
+        assert test_polarity == 'AABBCRCI'
     # For 8 bit samples, each complex sample consists of two bytes:
     # one byte for real followed by one byte for imaginary.
 
@@ -301,20 +310,22 @@ def main():
     print(f"log scale...")
     perf_start = perf_counter()
     log_psd_diffs = safe_scale_log(focus_chan_psd_diffs)
-    # log_psds = safe_scale_log(focus_chan_psds)
+    log_psds = safe_scale_log(focus_chan_psds)
     print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
     # print(f"log_diffs: {log_psd_diffs}")
 
     dilation_dim = int(n_freq_bins // 8)
     dilation_size = (2*dilation_dim, dilation_dim)
-    dilated_ascents = ndimage.maximum_filter(log_psd_diffs, size=dilation_size)
+    # dilated_ascents = ndimage.maximum_filter(log_psd_diffs, size=dilation_size)
     # dilated_psds = ndimage.maximum_filter(log_psds, size=dilation_size)
     # dilated_descents = ndimage.minimum_filter(log_psd_diffs, size=dilation_size)
     dilated_diff_mag = ndimage.maximum_filter(np.abs(log_psd_diffs), size=dilation_size )
     # dilated_diffs = np.add(dilated_ascents, np.abs(dilated_descents))
     # dilated_diffs = dilate_extrema(log_psd_diffs)
     # plot_data = dilated_descents
-
+    # dilated_filtered_psds = ndimage.maximum_filter(ndimage.gaussian_filter(log_psds,sigma=3), size=dilation_size )
+    dilated_filtered_psds = ndimage.maximum_filter(ndimage.sobel(np.abs(log_psd_diffs)), size=dilation_size )
+    # dilated_filtered_psds = ndimage.laplace(log_psds)
 
     display_file_name = os.path.basename(data_file_name)
     while True:
@@ -324,7 +335,7 @@ def main():
         # fig.subplots_adjust(hspace=0)
         fig.suptitle(f"chan {test_chan_idx} PSD diffs| {display_file_name}")
         # img0 = plt.imshow(plot_data.T, aspect='auto', cmap='inferno')
-        img0 = axes[0].imshow(dilated_ascents.T, aspect='auto', cmap='viridis')
+        img0 = axes[0].imshow(dilated_filtered_psds.T, aspect='auto', cmap='viridis')
         # axes[0].set_ylabel('Freq bin')
         img1 = axes[1].imshow(dilated_diff_mag.T, aspect='auto', cmap='inferno')
         # axes[1].set_ylabel('Freq bin')
