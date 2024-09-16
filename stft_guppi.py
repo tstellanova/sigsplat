@@ -5,13 +5,13 @@ Look for changes in power over time
 import argparse
 
 import blimpy
+from blimpy import GuppiRaw
 import matplotlib
 import matplotlib.pyplot as plt
 import sys
 
 import numpy as np
 import scipy
-from blimpy import GuppiRaw
 import os
 
 from scipy import ndimage
@@ -42,7 +42,7 @@ def gaussian_decimate(data, num_out_buckets, sigma=1.0):
     return decimated_data
 
 
-def process_dual_pol_block(chan_pol_a=None, chan_pol_b=None, n_freq_bins=1024, n_vps_rows_per_block=1, fs=100e6):
+def process_dual_pol_block(chan_pol_a=None, chan_pol_b=None, n_freq_bins=1024,  fs=100e6):
     if chan_pol_a is None:
         chan_pol_a = []
     if chan_pol_b is None:
@@ -57,7 +57,6 @@ def process_dual_pol_block(chan_pol_a=None, chan_pol_b=None, n_freq_bins=1024, n
     chan_pol_a_view = chan_pol_a_iq.astype(np.float32).view('complex64')
     # print(f"chan_pol_a_view {chan_pol_a_view.shape}")
     chan_pol_b_view = chan_pol_b_iq.astype(np.float32).view('complex64')
-    # assert samples_per_chan_per_block == len(chan_pol_a_view)
 
     # assume that signals of interest will be correlated in A and B polarities
     correlated_signal = np.multiply(chan_pol_a_view, np.conjugate(chan_pol_b_view))
@@ -134,9 +133,9 @@ def process_all_channels(data_reader=None,
         # fig.subplots_adjust(hspace=0)
         fig.suptitle(chan_title)
         # img0 = plt.imshow(plot_data.T, aspect='auto', cmap='inferno')
-        img0 = axes[0].imshow(dilated_psds.T, aspect='auto', cmap='inferno') # vmin=0, vmax=12)
+        img0 = axes[0].imshow(dilated_psds.T, aspect='auto', cmap='inferno') #, vmin=9, vmax=16)
         # axes[0].set_ylabel('Freq bin')
-        img1 = axes[1].imshow(dilated_diff_max.T, aspect='auto', cmap='viridis') #, vmin=20, vmax=60)
+        img1 = axes[1].imshow(dilated_diff_max.T, aspect='auto', cmap='viridis') #, vmin=15, vmax=80)
         # axes[1].set_ylabel('Freq bin')
         axes[1].set_xlabel('Time')
         cbar0 = fig.colorbar(img0, ax=axes[0])
@@ -153,6 +152,70 @@ def process_all_channels(data_reader=None,
         # plt.show()
 
 
+def plot_spectrum_dual_pol(raw_reader:GuppiRaw,
+                           display_file_name=None, out_filepath=None,
+                           start_freq_mhz=2e3, stop_freq_mhz=1e3, center_freq_mhz=1.5e3,
+                           plot_db=True,
+                           flag_show=False):
+    """ Do a (slow) numpy FFT and take power of data
+        Plot simple magnitude of FFT for input data
+    """
+    MAX_PLT_POINTS = 65536 * 4  # Max number of points in matplotlib plot
+    unused_header, pol_x, pol_y = raw_reader.read_next_data_block_int8()
+    print(f"pol_x: {pol_x.shape} {pol_x.dtype}") # (64, 524288, 2)
+
+    pol_x_complex = pol_x.astype(np.float32).view('complex64')[..., 0]
+    pol_y_complex = pol_y.astype(np.float32).view('complex64')[..., 0]
+    print(f"pol_x_complex: {pol_x_complex.shape} {pol_x_complex.dtype}")
+
+    print("Computing FFT...")
+    pol_x_fft_mag = np.abs(np.fft.fft(pol_x_complex)).flatten()
+    pol_y_fft_mag = np.abs(np.fft.fft(pol_y_complex)).flatten()
+
+    # Rebin to max number of points
+    if pol_x_fft_mag.shape[0] > MAX_PLT_POINTS:
+        dec_fac = int(pol_x_fft_mag.shape[0] / MAX_PLT_POINTS)
+        print(f"reshaping fac: {dec_fac} {pol_x_fft_mag.dtype}")
+        pol_x_fft_mag = blimpy.utils.rebin(pol_x_fft_mag, dec_fac)
+        pol_y_fft_mag = blimpy.utils.rebin(pol_y_fft_mag, dec_fac)
+
+    print(f"Plotting...{pol_x_fft_mag.shape} {pol_x_fft_mag.dtype}")
+    if plot_db:
+        plt.ylabel("mag(FFT) [dB]")
+        plt.plot(10 * np.log10(pol_x_fft_mag), label='pol_x')
+        plt.plot(10 * np.log10(pol_y_fft_mag), label='pol_y')
+    else:
+        plt.ylabel("mag(FFT)")
+        plt.plot(pol_x_fft_mag, label='pol_x')
+        plt.plot(pol_y_fft_mag, label='pol_y')
+
+    if display_file_name is not None:
+        plt.title(f"Spectrum: {display_file_name}")
+
+    orig_xticks = plt.gca().get_xticks()
+    print(f"orig_xticks: {orig_xticks}")
+    ticks_len = len(orig_xticks)
+    coarse_freqs = np.linspace(start_freq_mhz, stop_freq_mhz, ticks_len-2)
+    freq_step = coarse_freqs[1] - coarse_freqs[0]
+    expanded_coarse_freqs = np.concatenate(([coarse_freqs[0] - freq_step], coarse_freqs, [coarse_freqs[-1] + freq_step]))
+    print(f"freqs: {expanded_coarse_freqs.shape} range: {expanded_coarse_freqs[0]} ... {expanded_coarse_freqs[-1]}" )
+    plt.xticks(ticks=orig_xticks, labels=expanded_coarse_freqs)
+
+    xlim_range = plt.xlim()
+    # print(f"xlim_range {xlim_range}")
+    freq_ratio = float(xlim_range[1] - xlim_range[0])/(expanded_coarse_freqs[-1] - expanded_coarse_freqs[0])
+    scaled_freq_center = (center_freq_mhz - expanded_coarse_freqs[0])*freq_ratio + xlim_range[0]
+    # print(f"freq_ratio {freq_ratio}  scaled_freq_center {scaled_freq_center}")
+    plt.axvline(x=scaled_freq_center, color='r')
+
+    plt.legend()
+    if out_filepath is not None:
+        print(f"saving spectrum to:\n{out_filepath} ...")
+        plt.savefig(out_filepath)
+    if flag_show:
+        plt.show()
+
+
 def process_chan_over_all_blocks(raw_reader=None, chan_idx=0, n_blocks=1, n_freq_bins=1024, fs=100E6):
     focus_chan_psd_diffs = []
     all_focus_chan_psds = []
@@ -162,7 +225,10 @@ def process_chan_over_all_blocks(raw_reader=None, chan_idx=0, n_blocks=1, n_freq
     for block_idx in range(0, n_blocks):
         print(f"read block {block_idx} / {n_blocks} ...")
         perf_start = perf_counter()
-        _block_hdr, data_pol_a, data_pol_b = raw_reader.read_next_data_block_int8()
+        block_hdr, data_pol_a, data_pol_b = raw_reader.read_next_data_block_int8()
+        print(f"block_hdr: {block_hdr}")
+        if block_hdr is None:
+            break
         print(f"elapsed: {perf_counter() - perf_start:0.3f} seconds")
 
         chan_pol_a = data_pol_a[chan_idx]
@@ -170,6 +236,7 @@ def process_chan_over_all_blocks(raw_reader=None, chan_idx=0, n_blocks=1, n_freq
 
         if samples_per_chan_per_block is None:
             samples_per_chan_per_block = chan_pol_a.shape[0]
+            print(f"data_pol_a: {data_pol_a.shape} {data_pol_a.dtype}")
             print(f"chan_pol_a : {chan_pol_a.shape} samples_per_chan_per_block: {samples_per_chan_per_block}")
 
         block_psd = process_dual_pol_block(chan_pol_a, chan_pol_b, n_freq_bins, fs)
@@ -201,7 +268,8 @@ def main():
                         help="Source raw file path eg 'blc21_guppi.raw' with the '.raw' file extension",
                         default="../../baseband/bloda/"
                         # "guppi_58198_27514_685364_J0835-4510_B3_0001.0000.raw"
-                                "blc4_2bit_guppi_57432_24865_PSR_J1136+1551_1406_025_0002.0001.raw"
+                                "blc00_guppi_57598_81738_Diag_psr_j1903+0327_0019.0005.raw"
+                                # "blc4_2bit_guppi_57432_24865_PSR_J1136+1551_1406_025_0002.0001.raw"
                         )
     parser.add_argument('-o', dest='outdir', type=str, default='./data',
                         help='Output directory processed files')
@@ -211,14 +279,20 @@ def main():
     out_dir = args.outdir
     print(f"Loading: {data_file_name} , output to: {out_dir}")
 
+    display_file_name = os.path.splitext(os.path.basename(data_file_name))[0]
+
     bb_reader = GuppiRaw(data_file_name)
     # Seek through the file to find how many data blocks there are in the file
-    max_blocks = int(4)
+    # max_blocks = int(4)
     n_data_blocks = bb_reader.find_n_data_blocks()
     print(f"total n_data_blocks: {n_data_blocks}")
-    if n_data_blocks > max_blocks:
-        print(f"clamping to {max_blocks} blocks")
-        n_data_blocks = max_blocks
+    # if n_data_blocks > max_blocks:
+    #     print(f"clamping to {max_blocks} blocks")
+    #     n_data_blocks = max_blocks
+    # TODO this is a little confusing, but:
+    # sometimes n_data_blocks is, say, 128;
+    # if we then read 4 blocks for each channel,
+    # we only get 32 channel reads before we run out of memory
 
     # reads the first header and then seek to file offset zero
     first_header = bb_reader.read_first_header()
@@ -268,8 +342,13 @@ def main():
     ntime_calc = block_size * 8 / (2 * n_pols * n_coarse_chans * n_bits)
     print(f"NTIME: {ntime_calc} BLOCSIZE: {block_size} NPOL: {n_pols} NCHAN: {n_coarse_chans} NBITS: {n_bits}")
 
-    if n_pols > 2:
-        n_pols = np.sqrt(n_pols)
+    # NDIM is the number of samples per channel in the block; i.e.,
+    # BLOCSIZE/(OBSNCHAN*NPOL*(NBITS/8))
+    samples_per_chan_per_block = int((block_size*8) / (n_pols * n_coarse_chans * n_bits))
+    print(f"n_dim (samples_per_chan_per_block): {samples_per_chan_per_block}")
+
+    # if n_pols > 2:
+    #     n_pols = np.sqrt(n_pols)
 
     # first_header: {
     # 'BACKEND': 'GUPPI', 'TELESCOP': 'GBT', 'OBSERVER': 'Andrew Siemion', 'PROJID': 'AGBT16A_999_17',
@@ -329,10 +408,40 @@ def main():
     # Note that NTIME is usually not present in the header, but can be calculated as:
     # NTIME = BLOCSIZE * 8 / (2 * NPOL * NCHAN * NBITS)
 
-    # reset the file index before we process all the relevant blocks
+    # reset the file  before we process all the relevant blocks
     bb_reader.reset_index()
+    # # forward through the data blocks til we're halfway there
+    # for i in range(n_data_blocks // 2):
+    #     blk_hdr, blk_data = bb_reader.read_next_data_block()
+    #     if i == 0:
+    #         print(f"raw block {blk_data.shape} dtype: {blk_data.dtype}")
+    full_screen_dims = (16, 10)
+    fig = plt.figure(figsize=full_screen_dims, constrained_layout=True)
+    img_save_path = f"./img/spectra/{display_file_name}_blmag.png"
+    plot_spectrum_dual_pol(bb_reader,
+                           display_file_name=display_file_name,
+                           out_filepath=img_save_path,
+                           start_freq_mhz=start_freq_mhz,
+                           stop_freq_mhz=stop_freq_mhz,
+                           center_freq_mhz=center_obs_freq_mhz,
+                           flag_show=True
+                           )
+    # bb_reader.plot_spectrum(flag_show=False)
 
-    display_file_name = os.path.splitext(os.path.basename(data_file_name))[0]
+    # print(f"saving spectrum to:\n{img_save_path} ...")
+    # plt.savefig(img_save_path)
+
+    # plt.figure()
+    # _header, whole_data = bb_reader.read_next_data_block()
+    # plt.psd(whole_data[0,::2,0], NFFT=16384)
+    # plt.psd(whole_data[0,1::2,0], NFFT=16384)
+    #
+    # plt.show()
+    return
+
+    # reload the data file for processing, clearing out any reader state
+    bb_reader = GuppiRaw(data_file_name)
+
     n_freq_bins = 256  # TODO calculate a reasonable value
     process_all_channels(bb_reader, n_coarse_chans=n_coarse_chans,
                          n_freq_bins=n_freq_bins,
