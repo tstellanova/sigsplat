@@ -48,21 +48,9 @@ def process_dual_pol_block(chan_pol_a=None, chan_pol_b=None, n_freq_bins=1024,  
     if chan_pol_b is None:
         chan_pol_b = []
 
-    # # For 8 bit samples, each complex sample consists of two bytes:
-    # # one byte for real followed by one byte for imaginary.
-    # chan_pol_a_iq = chan_pol_a.f
-    # ()
-    # chan_pol_b_iq = chan_pol_b.flatten()
-
     # TODO alt: squeeze?
     chan_pol_a_view = chan_pol_a.astype(np.float32).view('complex64')[..., 0]
-    # print(f"chan_pol_a_view initial: {chan_pol_a_view.shape}")
-    # print(f"chan_pol_a_view final: {chan_pol_a_view.shape}")
     chan_pol_b_view = chan_pol_b.astype(np.float32).view('complex64')[..., 0]
-
-    # chan_pol_a_view = chan_pol_a_iq.astype(np.float32).view('complex64')
-    # # print(f"chan_pol_a_view {chan_pol_a_view.shape}")
-    # chan_pol_b_view = chan_pol_b_iq.astype(np.float32).view('complex64')
 
     # assume that signals of interest will be correlated in A and B polarities
     # correlated_signal = np.multiply(chan_pol_a_view, np.conjugate(chan_pol_b_view))
@@ -75,10 +63,12 @@ def process_dual_pol_block(chan_pol_a=None, chan_pol_b=None, n_freq_bins=1024,  
     # block_psd = (2 / (n_freq_bins * fs)) * (np.abs(zxx_all) ** 2) / energy_correction  # PSD for a one-sided spectrum
 
     zxx_pol_a = stft_obj.stft(chan_pol_a_view)
-    pol_a_psd = (2 / (n_freq_bins * fs)) * (np.abs(zxx_pol_a) ** 2) / energy_correction  # PSD for a one-sided spectrum
+    pol_a_psd = (np.abs(zxx_pol_a) ** 2)/energy_correction # TODO testing against single-block plot
+    # pol_a_psd = (2 / (n_freq_bins * fs)) * (np.abs(zxx_pol_a) ** 2) / energy_correction  # PSD for a one-sided spectrum
 
     zxx_pol_b = stft_obj.stft(chan_pol_b_view)
-    pol_b_psd = (2 / (n_freq_bins * fs)) * (np.abs(zxx_pol_b) ** 2) / energy_correction  # PSD for a one-sided spectrum
+    pol_b_psd = (np.abs(zxx_pol_b) ** 2)/ energy_correction# TODO testing against single-block plot
+    # pol_b_psd = (2 / (n_freq_bins * fs)) * (np.abs(zxx_pol_b) ** 2) / energy_correction  # PSD for a one-sided spectrum
 
     block_psd = pol_a_psd + pol_b_psd # TODO use correlation instead?
 
@@ -106,24 +96,18 @@ def process_all_channels(data_reader:GuppiRaw=None,
         chan_start_mhz = start_freq_mhz + chan_idx*chan_bw_delta_mhz
         chan_title = f"chan {chan_idx:03d} | {chan_start_mhz:0.3f} MHz | {display_file_name}"
         print(f"Processing channel {chan_idx} (of {n_coarse_chans} ) over n_data_blocks: {n_data_blocks}")
-        focus_chan_psds, focus_chan_psd_diffs = process_chan_over_all_blocks(data_reader, chan_idx, n_data_blocks, n_freq_bins,
-                                                                             sampling_rate_hz)
-        min_psd = np.min(focus_chan_psds)
-        max_psd = np.max(focus_chan_psds)
-        psd_range = max_psd - min_psd
-        print(f">>> chan min_psd: {min_psd} psd_range: {psd_range:0.3e}")
+        focus_chan_psds, focus_chan_psd_diffs = process_chan_over_all_blocks(
+            data_reader, chan_idx, n_data_blocks, n_freq_bins, sampling_rate_hz)
 
-        min_psd_diff = np.min(focus_chan_psd_diffs)
-        max_psd_diff = np.max(focus_chan_psd_diffs)
-        psd_diff_range = max_psd_diff - min_psd_diff
-        print(f">>> min_psd_diff: {min_psd_diff} psd_diff_range: {psd_diff_range:0.3e}")
+        print(f">>> chan psds: {np.min(focus_chan_psds):0.3e} ... {np.max(focus_chan_psds):0.3e}")
+        print(f">>> chan psd_diff: {np.min(focus_chan_psd_diffs):0.3e} ... {np.max(focus_chan_psd_diffs):0.3e}")
 
         # use log scale for plot
         print(f"log scale...")
         perf_start = perf_counter()
         log_psd_diffs = safe_scale_log(focus_chan_psd_diffs)
-        normalized_psds = normalize_data(focus_chan_psds)
-        log_psds = safe_scale_log(normalized_psds)
+        # normalized_psds = normalize_data(focus_chan_psds)
+        log_psds = safe_scale_log(focus_chan_psds)
         print(f"elapsed: {perf_counter() - perf_start:0.3f} seconds")
 
         dilation_dim = int(n_freq_bins // 10)
@@ -142,8 +126,8 @@ def process_all_channels(data_reader:GuppiRaw=None,
         full_screen_dims = (16, 10)
         fig, axes = plt.subplots(nrows=2, figsize=full_screen_dims, constrained_layout=True, sharex=True, sharey=True)
         fig.suptitle(chan_title)
-        img0 = axes[0].imshow(log_psds.T, aspect='auto', cmap='inferno') #, vmin=9, vmax=16)
-        img1 = axes[1].imshow(dilated_diff_max.T, aspect='auto', cmap='viridis') #, vmin=15, vmax=80)
+        img0 = axes[0].imshow(log_psds, aspect='auto', cmap='inferno') #, vmin=9, vmax=16)
+        img1 = axes[1].imshow(dilated_diff_max, aspect='auto', cmap='viridis') #, vmin=15, vmax=80)
         axes[1].set_xlabel('Time')
         cbar0 = fig.colorbar(img0, ax=axes[0])
         cbar0.set_label('PSD dB', rotation=270, labelpad=15)
@@ -191,6 +175,9 @@ def plot_spectrum_dual_pol(raw_reader:GuppiRaw,
         pol_y_fft_mag = blimpy.utils.rebin(pol_y_fft_mag, dec_fac)
 
     print(f"Plotting...{pol_x_fft_mag.shape} {pol_x_fft_mag.dtype}")
+    print(f"pol_x min: {np.min(pol_x)} max: {np.max(pol_x)}")
+    print(f"pol_y min: {np.min(pol_y)} max: {np.max(pol_y)}")
+
     if plot_db:
         plt.ylabel("mag(FFT) [dB]")
         plt.plot(10 * np.log10(pol_x_fft_mag), label='pol_x')
@@ -228,23 +215,22 @@ def plot_spectrum_dual_pol(raw_reader:GuppiRaw,
 
 
 def process_chan_over_all_blocks(raw_reader:GuppiRaw=None, chan_idx:int=0, n_blocks:int=1, n_freq_bins:int=1024, fs=100E6):
-    focus_chan_psd_diffs = []
-    all_focus_chan_psds = []
-    prior_psd = None
+    # focus_chan_psd_diffs = []
+    all_chan_psds = None
+    # prior_psd = None
     samples_per_chan_per_block = None
-    # print(f"Processing chan {chan_idx} over n_blocks: {n_blocks}")
+    print(f"Collecting chan {chan_idx} PSDs over n_blocks: {n_blocks}")
     # TODO tmp: use a limited number of blocks
-    half_n_blocks = n_blocks // 2
-    block_range = range(half_n_blocks - 4, half_n_blocks + 4)
+    block_range = range(5)
     for block_idx in block_range:
-        print(f"Processing chan {chan_idx} block: {block_idx}/{n_blocks}")
+        # print(f"Processing chan {chan_idx} block: {block_idx}/{n_blocks}")
         perf_start = perf_counter()
         block_hdr, data_pol_a, data_pol_b = raw_reader.read_next_data_block_int8()
         # print(f"block_hdr: {block_hdr}")
         if block_hdr is None:
             print(f"block_hdr: {block_hdr}")
             break
-        print(f"elapsed: {perf_counter() - perf_start:0.3f} seconds")
+        # print(f"elapsed: {perf_counter() - perf_start:0.3f} seconds")
 
         chan_pol_a = data_pol_a[chan_idx]
         chan_pol_b = data_pol_b[chan_idx]
@@ -254,26 +240,32 @@ def process_chan_over_all_blocks(raw_reader:GuppiRaw=None, chan_idx:int=0, n_blo
             print(f"data_pol_a: {data_pol_a.shape} {data_pol_a.dtype}")
             print(f"chan_pol_a : {chan_pol_a.shape} samples_per_chan_per_block: {samples_per_chan_per_block}")
 
-
         block_psd = process_dual_pol_block(chan_pol_a, chan_pol_b, n_freq_bins, fs)
         # print(f"block_psd {block_psd.shape}") # something like (n_freq_bins, samples_per_chan_per_block)
 
-        print(f"Calculate block PSD {block_psd.shape} diffs...")
-        perf_start = perf_counter()
-        for t_idx in range(0, block_psd.shape[1]):
-            cur_psd = block_psd[:, t_idx]
-            all_focus_chan_psds.append(cur_psd)
-            if prior_psd is None:
-                # the zeroth psd_diff will always be zero
-                prior_psd = cur_psd
-                continue
-            cur_vps_diff = np.subtract(cur_psd, prior_psd)
-            focus_chan_psd_diffs.append(cur_vps_diff)
-            prior_psd = cur_psd
-        print(f"elapsed: {perf_counter() - perf_start:0.3f} seconds")
+        if all_chan_psds is None:
+            n_blocks_processing = block_range.stop - block_range.start
+            print(f"n_blocks_processing: {n_blocks_processing}")
+            extent_all_psds = n_blocks_processing * block_psd.shape[1]
+            full_extent_shape = (block_psd.shape[0], extent_all_psds)
+            print(f"full_extent_shape: {full_extent_shape}")
+            all_chan_psds = np.zeros(full_extent_shape, dtype=np.float32)
 
-    all_chan_psds = np.asarray(all_focus_chan_psds)
-    all_chan_psd_diffs = np.asarray(focus_chan_psd_diffs)
+        # first, collect all the PSDs into the PSD result block
+        block_inset = block_idx * block_psd.shape[1]
+        # print(f"block_inset {block_inset}")
+        all_chan_psds[0:block_psd.shape[0], block_inset:block_inset+block_psd.shape[1]] = block_psd
+
+    print(f"initial chan psds: {np.min(all_chan_psds):0.3e} ... {np.max(all_chan_psds):0.3e}")
+
+    print(f"Calculate all PSD {all_chan_psds.shape} diffs...")
+    perf_start = perf_counter()
+    all_chan_psd_diffs = np.zeros_like(all_chan_psds)
+    all_chan_psd_diffs[:, 1:] = all_chan_psds[:, 1:] - all_chan_psds[:, :-1]
+    print(f"elapsed: {perf_counter() - perf_start:0.3f} seconds")
+
+    print(f"all_chan_psd_diffs {all_chan_psd_diffs.shape}")
+    print(f"initial chan psd_diffs: {np.min(all_chan_psd_diffs):0.3e} ... {np.max(all_chan_psd_diffs):0.3e}")
 
     return all_chan_psds, all_chan_psd_diffs
 
@@ -302,13 +294,6 @@ def main():
     # max_blocks = int(4)
     n_data_blocks = bb_reader.find_n_data_blocks()
     print(f"total n_data_blocks: {n_data_blocks}")
-    # if n_data_blocks > max_blocks:
-    #     print(f"clamping to {max_blocks} blocks")
-    #     n_data_blocks = max_blocks
-    # TODO this is a little confusing, but:
-    # sometimes n_data_blocks is, say, 128;
-    # if we then read 4 blocks for each channel,
-    # we only get 32 channel reads before we run out of memory
 
     # reads the first header and then seek to file offset zero
     first_header = bb_reader.read_first_header()
@@ -440,7 +425,7 @@ def main():
                            start_freq_mhz=start_freq_mhz,
                            stop_freq_mhz=stop_freq_mhz,
                            center_freq_mhz=center_obs_freq_mhz,
-                           flag_show=True
+                           flag_show=False
                            )
 
     # reload the data file for processing, clearing out any reader state
