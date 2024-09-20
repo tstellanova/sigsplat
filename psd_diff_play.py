@@ -29,19 +29,32 @@ from time import perf_counter
 from scipy.ndimage import gaussian_filter1d
 
 
+def normalize_data(data):
+    return (data - np.mean(data)) / np.std(data)
+
+def remove_n_peaks(data, n_peaks):
+    # Step 1: Find the median of the array
+    median_value = np.median(data)
+
+    # Step 2: Find the indices of the n highest peaks
+    peak_indices = np.argpartition(data, -n_peaks)[-n_peaks:]
+
+    # Step 3: Set the n highest peaks to the median value
+    data[peak_indices] = median_value
+
+    return data
 
 def safe_log(data):
     return np.log10(np.abs(data) + sys.float_info.epsilon) * np.sign(data)
 
-def gaussian_decimate(data, num_out_buckets, sigma=1.0):
-    # Step 1: Apply Gaussian filter
-    filtered_data = gaussian_filter1d(data, sigma=sigma)
-
-    # Step 2: Decimate (downsample)
+def simple_decimate(data, num_out_buckets):
     decimation_factor = len(data) // num_out_buckets
-    decimated_data = filtered_data[::decimation_factor]
-
+    decimated_data = data[::decimation_factor]
     return decimated_data
+
+def gaussian_decimate(data, num_out_buckets, sigma=1.0):
+    filtered_data = gaussian_filter1d(data, sigma=sigma)
+    return simple_decimate(filtered_data, num_out_buckets)
 
 def grab_one_integration(obs_obj:Waterfall=None, integration_idx=0):
     obs_obj.read_data(t_start=integration_idx, t_stop=integration_idx+1)
@@ -95,32 +108,23 @@ def main():
     # focus_freq_start = 8420.2163
     # focus_freq_stop = 8420.2166
     # obs_obj.read_data(f_start=focus_freq_start, f_stop=focus_freq_stop) # Voyager carrier only
+
+    # plt.figure(figsize=full_screen_dims)
     # obs_obj.plot_spectrum(logged=True)
+    # plt.show()
+    #
+    # plt.figure(figsize=full_screen_dims)
     # obs_obj.plot_waterfall()
     # plt.show()
 
-    print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
-
     # dump some interesting facts about this observation
-    print(">>> Dump observation info ...")
-    perf_start = perf_counter()
     obs_obj.info()
-    print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
-
-    if 'rawdatafile' in obs_obj.header:
-        print(f"Source raw data file: {obs_obj.header['rawdatafile']}")
-    else:
-        print(f"No upstream raw data file reported in header")
 
     src_data_filename = os.path.basename(data_path)
     display_file_name = os.path.splitext(os.path.basename(src_data_filename))[0]
 
     # the following reads through the filterbank file in order to calculate the number of coarse channels
-    print("Calculate coarse channels ...")
-    perf_start = perf_counter()
     n_coarse_chan = int(obs_obj.calc_n_coarse_chan())
-    print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
-
     n_fine_chan = obs_obj.header['nchans']
     fine_channel_bw_mhz = obs_obj.header['foff']
 
@@ -149,11 +153,10 @@ def main():
     #       f"s/b: integrations {n_integrations_input}, polarities {n_polarities_stored}, n_fine_chan {n_fine_chan} ")
 
     # validate that the input file data shape matches expectations set by header
-    # # TODO this fails for large files
+    # # TODO these checks fail for large files becaue data is not preloaded
     # assert n_integrations_input == obs_obj.data.shape[0]
     # assert n_polarities_stored == obs_obj.data.shape[1]
     # assert n_fine_chan == obs_obj.data.shape[2]
-
 
     n_integrations_to_process = n_integrations_input
     if n_integrations_input > 64:
@@ -164,116 +167,128 @@ def main():
     integration_period_sec = float(obs_obj.header['tsamp'])
     print(f"Integration period (tsamp): {integration_period_sec:0.6f} seconds")
     sampling_rate_mhz = np.abs(n_fine_chan * fine_channel_bw_mhz)
-    print(f"Sampling bandwidth: {sampling_rate_mhz} MHz")
+    print(f"Total sampling bandwidth: {sampling_rate_mhz} MHz")
     sampling_rate_hz = sampling_rate_mhz * 1E6
     # spectra per integration is n
     spectrum_sampling_period = n_fine_chan / sampling_rate_hz
     n_fine_spectra_per_integration = int(np.ceil(integration_period_sec / spectrum_sampling_period))
     # rawspec refers to `Nas` as "Number of fine spectra to accumulate per dump"; defaults to 51, 128, 3072
-    print(f"Num fine spectra collected per integration: {n_fine_spectra_per_integration}")
+    print(f"Num fine spectra accumulated per integration: {n_fine_spectra_per_integration}")
     # n_fine_spectra_per_integration =
     # tsamp   cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i]; // Time integration sampling rate in seconds.
 
-    print(f"file nbits: {int(obs_obj.header['nbits'])}")
+    file_nbits = int(obs_obj.header['nbits'])
+    # print(f"file nbits: {file_nbits}")
+    assert file_nbits == 32
 
     print(f"Load first integration from disk...")
-    perf_start = perf_counter()
-    print(f"shape of data: {obs_obj.data.shape}")
+    perf_start_first_int_load = perf_counter()
+    print(f"shape of one integration: {obs_obj.data.shape}")
     obs_freqs, prior_ps = obs_obj.grab_data(t_start=0, t_stop=1)
-    prior_ps /= n_fine_spectra_per_integration # average value of the PS over the integration
+    # prior_ps /= n_fine_spectra_per_integration # average value of the PS over the integration
     print(f"obs_freqs {obs_freqs[0]} ... {obs_freqs[-1]}")
-    print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
-    print(f"first integration shape: {prior_ps.shape} min: {np.min(prior_ps)} max: {np.max(prior_ps)}")
+    print(f"First integration load >>> elapsed: {perf_counter()  - perf_start_first_int_load:0.3f} seconds")
+    print(f"first integration shape: {prior_ps.shape} {prior_ps.dtype} min: {np.min(prior_ps):0.3e} max: {np.max(prior_ps):0.3e}")
 
     n_input_buckets = len(prior_ps)
     if n_input_buckets != n_fine_chan:
         print(f"processing subset: {n_input_buckets} / {n_fine_chan} fine channels")
-    raw_ps_diffs = np.zeros((n_integrations_to_process, n_input_buckets))
 
-    print(f"Walking {n_integrations_to_process} integrations ...")
-    perf_start = perf_counter()
+    raw_psds = np.zeros((n_integrations_to_process, n_input_buckets), dtype=np.float32 )
+
+    print(f"Collecting {n_integrations_to_process} integrations ...")
+    perf_start_collection = perf_counter()
     for int_idx in range(n_integrations_to_process):
-        # print(f"integration: {int_idx}")
-        cur_ps = grab_one_integration(obs_obj,int_idx)
-        cur_ps /= n_fine_spectra_per_integration # average value of the PS over the integration
-        raw_ps_diffs[int_idx] =  np.subtract(cur_ps, prior_ps)
-        prior_ps = cur_ps
+        cur_ps = grab_one_integration(obs_obj, int_idx)
+        # TODO remove peaks here ?
+        # remove_n_peaks(cur_ps, 2)
+        cur_ps = gaussian_filter1d(cur_ps, sigma=2)
+        raw_psds[int_idx] = cur_ps
+    print(f"Collection >>> elapsed: {perf_counter() - perf_start_collection:0.3f} seconds")
 
-    prior_ps = None
-    print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
+    print(f"Raw PSDs range: {np.min(raw_psds):0.3e} ... {np.max(raw_psds):0.3e}")
+    # perf_start_2dgaussian = perf_counter()
+    # raw_psds = ndimage.gaussian_filter(raw_psds, sigma=1)
+    # print(f"2dgaussian >> elapsed: {perf_counter() - perf_start_2dgaussian:0.3f} seconds")
+    # print(f"Flt PSDs range: {np.min(raw_psds):0.3e} ... {np.max(raw_psds):0.3e}")
+    raw_psds = safe_log(raw_psds)
+    print(f"Log PSDs range: {np.min(raw_psds):0.3e} ... {np.max(raw_psds):0.3e}")
 
+    # Using ascending frequency for all plots.
+    if obs_obj.header['foff'] < 0:
+        raw_psds = raw_psds[..., ::-1]  # Reverse data
+        obs_freqs = obs_freqs[::-1] # Reverse frequencies
+
+    print(f"revised obs_freqs {obs_freqs[0]} ... {obs_freqs[-1]}")
+
+    # decimate in order to have a reasonable plot size
+    n_down_buckets = 1024
+    decimated_psds = None
+
+    decimation_factor = int(len(raw_psds[0]) / n_down_buckets)
+    plotted_freqs = obs_freqs[:-decimation_factor:decimation_factor]
+
+    if decimation_factor > 1:
+        print(f"Decimating {n_input_buckets} fine channels to {n_down_buckets} buckets, ratio: {n_input_buckets / n_down_buckets} ...")
+        # perf_start_decimation = perf_counter()
+        # decimated_psds = np.array([gaussian_decimate(row, n_down_buckets) for row in raw_psds])
+        decimated_psds = raw_psds[::, ::decimation_factor] # TODO faster? Requires prior filtering though
+        print(f"decimated_psds shape: {decimated_psds.shape}")
+        # print(f"Decimating >>> elapsed: {perf_counter()  - perf_start_decimation:0.3f} seconds")
+    else:
+        n_down_buckets = n_input_buckets
+        decimated_psds = raw_psds
+
+    # Calculate diffs between next and previous PSD (integration) rows
+    # psd_jumps_time = decimated_psds[1:] - decimated_psds[:-1]
+    psd_jumps_time = np.diff(decimated_psds, axis=0)
     # Compute the rate of change between time steps
-    rate_dpsd_dt = np.diff(raw_ps_diffs, axis=0)
+    sec_per_integration = integration_period_sec / n_integrations_to_process
+    rate_dpsd_dt = psd_jumps_time / sec_per_integration
     print(f"rate_dpsd_dt: {rate_dpsd_dt.shape}")
     zero_row = np.zeros((1, rate_dpsd_dt.shape[1]))
     rate_dpsd_dt = np.vstack((zero_row, rate_dpsd_dt))
 
     # Compute the rate of change between frequencies
-    rate_dpsd_df = np.diff(raw_ps_diffs, axis=1)
-    print(f"rate_dpsd_df: {rate_dpsd_df.shape}")
-    # Insert the zero row at the beginning of the array
-    # zero_row = np.zeros((1, rate_dpsd_df.shape[1]))
-    # rate_dpsd_df = np.vstack((zero_row, rate_dpsd_df))
+    psd_jumps_freq = np.diff(decimated_psds, axis=1)
+    print(f"psd_jumps_freq: {psd_jumps_freq.shape}")
+    freq_per_dec_bucket = 1 # TODO temporary
+    rate_dpsd_df = psd_jumps_freq / freq_per_dec_bucket
+    zero_column = np.zeros((rate_dpsd_df.shape[0], 1))
+    rate_dpsd_df = np.hstack((rate_dpsd_df, zero_column))
 
-    print(f"rate_dpsd_dt: {rate_dpsd_dt.shape} rate_dpsd_df: {rate_dpsd_df.shape}")
+    plot_psds = decimated_psds
+    # plot_psds = ndimage.maximum_filter(decimated_psds, size=6)
 
-    # Using accending frequency for all plots.
-    if obs_obj.header['foff'] < 0:
-        raw_ps_diffs = raw_ps_diffs[..., ::-1]  # Reverse data
-        rate_dpsd_dt = rate_dpsd_dt[..., ::-1]  # Reverse data
-        rate_dpsd_df = rate_dpsd_df[..., ::-1]  # Reverse data
-        obs_freqs = obs_freqs[::-1] # Reverse frequencies
+    plot_rate_dpsd_dt = rate_dpsd_dt
+    plot_rate_dpsd_df = rate_dpsd_df
 
-    print(f"revised obs_freqs {obs_freqs[0]} ... {obs_freqs[-1]}")
-    # decimate in order to have a reasonable plot size
-    down_buckets = 1024
-    decimation_factor = int(len(raw_ps_diffs[0]) / down_buckets)
-    plotted_freqs = obs_freqs[:-decimation_factor:decimation_factor]
+    print(f"shape psds: {plot_psds.shape} dpsd_dt: {plot_rate_dpsd_dt.shape} dpsd_df: {plot_rate_dpsd_df.shape}")
 
-    if n_input_buckets > down_buckets:
-        print(f"Decimating {n_input_buckets} fine channels to {down_buckets} buckets, ratio: {n_input_buckets / down_buckets} ...")
-        perf_start = perf_counter()
-        # decimated_diffs = np.array([scipy.signal.decimate(row, down_buckets, ftype='iir') for row in raw_ps_diffs])
-        # decimated_diffs = np.array([scipy.signal.decimate(row, down_buckets, ftype='fir') for row in raw_ps_diffs])
-        decimated_diffs = np.array([gaussian_decimate(row, down_buckets) for row in raw_ps_diffs])
-        decimated_rate_psdiff_dt = np.array([gaussian_decimate(row, down_buckets) for row in rate_dpsd_dt])
-        decimated_rate_psdiff_df = np.array([gaussian_decimate(row, down_buckets) for row in rate_dpsd_df])
-        print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
-    else:
-        down_buckets = n_input_buckets
-        decimated_diffs = raw_ps_diffs
-        decimated_rate_psdiff_dt = rate_dpsd_dt
-        decimated_rate_psdiff_df = rate_dpsd_df
-
-    plot_diffs = safe_log(decimated_diffs)
-    plot_rate_psdiff_dt = safe_log(decimated_rate_psdiff_dt)
-    plot_rate_psdiff_df = safe_log(decimated_rate_psdiff_df)
-
-    print(f"plot_diffs.shape {plot_diffs.shape} plot_rate_psdiff_dt.shape {plot_rate_psdiff_dt.shape}...")
-    perf_start = perf_counter()
+    perf_start_plotting = perf_counter()
 
     fig, axes = plt.subplots(nrows=3, figsize=full_screen_dims,  sharex=True, sharey=True, constrained_layout=True)
     fig.suptitle(f"{start_freq:0.4f} | {display_file_name}")
 
     cmap0 = matplotlib.colormaps['viridis']
-    cmap1 = matplotlib.colormaps['inferno']
-    cmap2 = matplotlib.colormaps['turbo']
+    cmap1 = matplotlib.colormaps['inferno'] # other options: 'Spectral'
+    cmap2 = matplotlib.colormaps['viridis']
 
-    img0 = axes[0].imshow(plot_diffs.T, aspect='auto', cmap='viridis')
-    img1 = axes[1].imshow(plot_rate_psdiff_dt.T, aspect='auto', cmap='inferno')
-    img2 = axes[2].imshow(plot_rate_psdiff_df.T, aspect='auto', cmap='turbo')
+    img0 = axes[0].imshow(plot_psds.T, aspect='auto', cmap=cmap0)
+    img1 = axes[1].imshow(plot_rate_dpsd_dt.T, aspect='auto', cmap=cmap1)
+    img2 = axes[2].imshow(plot_rate_dpsd_df.T, aspect='auto', cmap=cmap2)
     axes[2].set_xlabel('Timestep')
 
-    y_bott, y_top = axes[0].get_ylim()
-    x_left, x_right = axes[0].get_xlim()
-    timescale_factor =  (x_right - x_left) / n_integrations_to_process
-    for time_step in range(n_integrations_to_process):
-        axes[0].axvline(x=timescale_factor*time_step, ymin=y_bott, ymax=y_top, color=cmap0(0.5), linewidth=1)
-        axes[1].axvline(x=timescale_factor*time_step, ymin=y_bott, ymax=y_top, color=cmap1(0.5), linewidth=1)
-        axes[2].axvline(x=timescale_factor*time_step, ymin=y_bott, ymax=y_top, color=cmap2(0.5), linewidth=1)
+    # y_bott, y_top = axes[0].get_ylim()
+    # x_left, x_right = axes[0].get_xlim()
+    # timescale_factor =  (x_right - x_left) / n_integrations_to_process
+    # for time_step in range(n_integrations_to_process):
+    #     axes[0].axvline(x=timescale_factor*time_step, ymin=y_bott, ymax=y_top, color=cmap0(0.5), linewidth=1)
+    #     axes[1].axvline(x=timescale_factor*time_step, ymin=y_bott, ymax=y_top, color=cmap1(0.5), linewidth=1)
+    #     axes[2].axvline(x=timescale_factor*time_step, ymin=y_bott, ymax=y_top, color=cmap2(0.5), linewidth=1)
 
     cbar0 = fig.colorbar(img0, ax=axes[0])
-    cbar0.set_label('raw ΔdB', rotation=270, labelpad=15)
+    cbar0.set_label('Power dB', rotation=270, labelpad=15)
     cbar0.ax.yaxis.set_ticks_position('left')
 
     cbar1 = fig.colorbar(img1, ax=axes[1])
@@ -282,9 +297,8 @@ def main():
 
     cbar2 = fig.colorbar(img2, ax=axes[2])
     cbar2.set_label('rate ΔdB/df', rotation=270, labelpad=15)
+    # cbar2.set_label('ΔdB', rotation=270, labelpad=15)
     cbar2.ax.yaxis.set_ticks_position('left')
-
-    print(f"x_left: {x_left}, x_right: {x_right}")
 
     orig_yticks = axes[0].get_yticks()
     print(f"axes0 orig_yticks ({len(orig_yticks)}) {orig_yticks}")
@@ -295,18 +309,26 @@ def main():
     plotted_freq_range = plotted_freqs[-1] - plotted_freqs[0]
     print(f"plotted_freq_range: {plotted_freq_range}")
 
-    # # tick_step_mhz = plotted_freq_range / len(orig_yticks)
-    # # min_freq = plotted_freqs[0] - tick_step_mhz
-    # tick_freqs = np.linspace(plotted_freqs[0], plotted_freqs[-1], num=len(orig_yticks))
-    # print(f"tick_freqs ({len(tick_freqs)}): {tick_freqs}")
-    #
-    # ytick_labels = [f"{freq:0.4f}" for freq in tick_freqs]
-    # print(f"ytick_labels: {ytick_labels}")
+    # tick_step = orig_yticks[1] - orig_yticks[0]
+    # tick_step_mhz = plotted_freq_range / len(orig_yticks)
+    tick_freqs = np.linspace(plotted_freqs[0], plotted_freqs[-1], num=len(orig_yticks))
+    print(f"tick_freqs ({len(tick_freqs)}): {tick_freqs}")
+    tick_step_mhz = tick_freqs[1] - tick_freqs[0]
+    tick_freqs -= tick_step_mhz
+    print(f"tick_freqs ({len(tick_freqs)}): {tick_freqs}")
+    ytick_labels = [f"{freq:0.4f}" for freq in tick_freqs]
+    print(f"ytick_labels: {ytick_labels}")
+    axes[0].set_yticklabels(ytick_labels)
+    axes[1].set_yticklabels(ytick_labels)
+    axes[2].set_yticklabels(ytick_labels)
     # axes[0].set_yticks(ticks=orig_yticks, labels=ytick_labels)
     # axes[1].set_yticks(ticks=orig_yticks, labels=ytick_labels)
     # axes[2].set_yticks(ticks=orig_yticks, labels=ytick_labels)
 
-    print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
+    final_ylabels = axes[0].get_yticklabels()
+    print(f"final_ylabels ({len(final_ylabels)}) : {final_ylabels}")
+    print(f"Plotting >>> elapsed: {perf_counter()  - perf_start_plotting:0.3f} seconds")
+
     img_save_path = f"{plots_path}pow_diffs/{display_file_name}.powdiff.png"
     print(f"saving image to:\n{img_save_path}")
     plt.savefig(img_save_path)
