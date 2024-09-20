@@ -80,18 +80,21 @@ def main():
     parser.add_argument('src_data_path', nargs='?',
                         help="Source hdf5 (.h5) or filerbank (.fil) file path",
                         # default="../../filterbank/blgcsurvey_cband/"
-                        #    "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_01220_BLGCsurvey_Cband_B04_0018.gpuspec.0002.fil"
-                        #   "spliced_blc00010203040506o7o01113141516o7o0212223242526o7o031323334353637_guppi_58705_14221_BLGCsurvey_Cband_C12_0060.gpuspec.0002.fil"
-                        #   "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_18741_BLGCsurvey_Cband_A00_0063.gpuspec.0002.fil"
-                        #   "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_13603_BLGCsurvey_Cband_C12_0058.gpuspec.0002.fil"
-                        default="../../filterbank/misc/"
-                          # "voyager_f1032192_t300_v2.fil" # 2 integrations, 63 coarse channels, small
-                          "blc27_guppi_58410_37136_195860_FRB181017_0001.0000.h5" # 44 coarse chans, 78 integrations
-                          # "blc20_guppi_57991_66219_DIAG_FRB121102_0020.gpuspec.0001.fil" #  64 coarse chan, 512 fine, 3594240 integrations?
-                        # default="../../filterbank/blc07/"
-                        #   "blc07_guppi_57650_67573_Voyager1_0002.gpuspec.0000.fil" # 16 integrations
+                            # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_13603_BLGCsurvey_Cband_C12_0058.gpuspec.0000.fil" # LORGE 16 ints, 1664 coarse, 1744830464 fine
+                            # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_13603_BLGCsurvey_Cband_C12_0058.gpuspec.0002.fil" # 279 ints, 1664 coarse,
+                            # "spliced_blc00010203040506o7o01113141516o7o0212223242526o7o031323334353637_guppi_58705_14221_BLGCsurvey_Cband_C12_0060.gpuspec.0002.fil" # 279 ints, 1664 coarse, 1703936 fine
+                            #  "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_18741_BLGCsurvey_Cband_A00_0063.gpuspec.0002.fil" # 120 ints, 1164 coarse, 1703936 fine
+                            # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_01220_BLGCsurvey_Cband_B04_0018.gpuspec.0002.fil"
+                            # "spliced_blc40414243444546o7o0515253545556o7o0616263646566o7o071727374757677_guppi_58702_18718_BLGCsurvey_Cband_C01_0026.gpuspec.0002.fil"
+
+                        # default="../../filterbank/misc/"
+                                # "blc20_guppi_57991_66219_DIAG_FRB121102_0020.gpuspec.0001.fil" #  64 coarse chan, 512 fine, 3594240 integrations?
+                                # "voyager_f1032192_t300_v2.fil" # 2 integrations, 63 coarse channels, small
+                          # "blc27_guppi_58410_37136_195860_FRB181017_0001.0000.h5" # 44 coarse chans, 78 integrations
+                        default="../../filterbank/blc07/"
+                          "blc07_guppi_57650_67573_Voyager1_0002.gpuspec.0000.fil" # 16 integrations
                         # default="../../filterbank/blc03/"
-                        #         "blc3_2bit_guppi_57386_VOYAGER1_0002.gpuspec.0000.fil" # 16 integrations, interesting pulses
+                                # "blc3_2bit_guppi_57386_VOYAGER1_0002.gpuspec.0000.fil" # 16 integrations, 64 coarse, 66125824 fine
                         # default="../../filterbank/voyager1_rosetta_blc3/"
                         #    "Voyager1.single_coarse.fine_res.h5" # 16 integrations, single coarse channel
                         #   "Voyager1.single_coarse.fine_res.fil"
@@ -176,8 +179,8 @@ def main():
     # assert n_fine_chan == obs_obj.data.shape[2]
 
     n_integrations_to_process = n_integrations_input
-    if n_integrations_input > 256:
-        n_integrations_to_process = 256
+    if n_integrations_input > 280:
+        n_integrations_to_process = 280
         print(f"clamping n_integrations_to_process to {n_integrations_to_process}")
 
     # tsamp is "Time integration sampling rate in seconds" (from rawspec)
@@ -286,8 +289,8 @@ def main():
     # plot_psds = ndimage.maximum_filter(decimated_psds, size=6)
     # plot_psds = thresholded_psds
 
-    # plot_dpsd_dt = dpsd_dt
-    plot_dpsd_dt = ndimage.gaussian_filter1d(dpsd_dt, axis=0, sigma=3)
+    plot_dpsd_dt = dpsd_dt
+    # plot_dpsd_dt = ndimage.gaussian_filter1d(dpsd_dt, axis=0, sigma=3)
 
     print(f"shape psds: {plot_psds.shape} dpsd_dt: {plot_dpsd_dt.shape} ")
 
@@ -295,20 +298,12 @@ def main():
     fig, axes = plt.subplots(nrows=2, figsize=full_screen_dims,  sharex=True, sharey=True, constrained_layout=True)
     fig.suptitle(f"{start_freq:0.4f} | {display_file_name} | N{n_down_buckets} | T{n_integrations_to_process}")
 
-    cmap0 = matplotlib.colormaps['magma'] #'viridis']
-    cmap1 = matplotlib.colormaps['inferno'] # other options: 'magma', 'plasma'
+    cmap0 = matplotlib.colormaps['magma']
+    cmap1 = matplotlib.colormaps['cividis']
 
     img0 = axes[0].imshow(plot_psds.T, aspect='auto', cmap=cmap0)
     img1 = axes[1].imshow(plot_dpsd_dt.T, aspect='auto', cmap=cmap1)
     axes[-1].set_xlabel('Timestep')
-
-    # y_bott, y_top = axes[0].get_ylim()
-    # x_left, x_right = axes[0].get_xlim()
-    # timescale_factor =  (x_right - x_left) / n_integrations_to_process
-    # for time_step in range(n_integrations_to_process):
-    #     axes[0].axvline(x=timescale_factor*time_step, ymin=y_bott, ymax=y_top, color=cmap0(0.5), linewidth=1)
-    #     axes[1].axvline(x=timescale_factor*time_step, ymin=y_bott, ymax=y_top, color=cmap1(0.5), linewidth=1)
-    #     axes[2].axvline(x=timescale_factor*time_step, ymin=y_bott, ymax=y_top, color=cmap2(0.5), linewidth=1)
 
     cbar0 = fig.colorbar(img0, ax=axes[0])
     cbar0.set_label('Power dB', rotation=270, labelpad=15)
