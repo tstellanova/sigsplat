@@ -16,6 +16,7 @@ import logging
 import sigmf
 from matplotlib.ticker import StrMethodFormatter
 from scipy import ndimage
+from scipy.signal import find_peaks
 from sigmf import sigmffile, SigMFFile
 from blimpy import Waterfall
 import matplotlib.pyplot as plt
@@ -32,17 +33,50 @@ from scipy.ndimage import gaussian_filter1d
 def normalize_data(data):
     return (data - np.mean(data)) / np.std(data)
 
-def remove_n_peaks(data, n_peaks):
-    # Step 1: Find the median of the array
-    median_value = np.median(data)
+def remove_narrow_peaks(arr_db, db_threshold=5, peak_width=2):
+    # Convert the signal to dB scale
+    # arr_db = safe_log(arr)
 
-    # Step 2: Find the indices of the n highest peaks
-    peak_indices = np.argpartition(data, -n_peaks)[-n_peaks:]
+    # Identify peaks, with a minimum width of 1 or 2 samples
+    peaks, properties = find_peaks(arr_db, width=peak_width)
 
-    # Step 3: Set the n highest peaks to the median value
-    data[peak_indices] = median_value
+    # Create a copy of the array to modify
+    arr_cleaned = arr_db.copy()
 
-    return data
+    peak_half_width = int(peak_width // 2)
+    # Iterate over the found peaks
+    for peak in peaks:
+        # Check if the peak is at least `db_threshold` dB higher than its neighbors
+        left_neighbor = arr_db[peak-peak_half_width] if peak-peak_half_width >= 0 else arr_db[peak]
+        right_neighbor = arr_db[peak+peak_half_width] if peak+peak_half_width < len(arr_db) else arr_db[peak]
+        surrounding_avg = (left_neighbor + right_neighbor) / 2
+
+        # If the peak exceeds the threshold, smooth it out by setting to surrounding average
+        if arr_db[peak] - surrounding_avg >= db_threshold:
+            arr_cleaned[peak] = surrounding_avg
+
+    return arr_cleaned
+def remove_peaks_vectorized(arr_db, db_threshold=5):
+
+    # Identify peaks: Values greater than both their left and right neighbors
+    left_shift = np.roll(arr_db, 1)
+    right_shift = np.roll(arr_db, -1)
+
+    is_peak = (arr_db > left_shift) & (arr_db > right_shift)
+
+    # Calculate the average of the neighboring values for each sample
+    surrounding_avg = (left_shift + right_shift) / 2
+
+    # Find peaks that exceed the threshold compared to the neighboring average
+    exceeds_threshold = (arr_db - surrounding_avg) >= db_threshold
+
+    # Get the positions of peaks that meet both conditions
+    peaks_to_remove = is_peak & exceeds_threshold
+
+    # Replace the peaks with the surrounding average
+    arr_db[peaks_to_remove] = surrounding_avg[peaks_to_remove]
+
+    return arr_db
 
 def safe_log(data):
     return np.log10(np.abs(data) + sys.float_info.epsilon) * np.sign(data)
@@ -66,21 +100,21 @@ def main():
     parser = argparse.ArgumentParser(description='Analyze power correlation of filterbank files')
     parser.add_argument('src_data_path', nargs='?',
                         help="Source hdf5 (.h5) or filerbank (.fil) file path",
-                        # default="../../filterbank/misc/voyager_f1032192_t300_v2.fil"
                         # default="../../filterbank/blgcsurvey_cband/"
-                        #         "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_01220_BLGCsurvey_Cband_B04_0018.gpuspec.0002.fil"
+                        #    "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_01220_BLGCsurvey_Cband_B04_0018.gpuspec.0002.fil"
                         #   "spliced_blc00010203040506o7o01113141516o7o0212223242526o7o031323334353637_guppi_58705_14221_BLGCsurvey_Cband_C12_0060.gpuspec.0002.fil"
                         #   "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_18741_BLGCsurvey_Cband_A00_0063.gpuspec.0002.fil"
                         #   "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_13603_BLGCsurvey_Cband_C12_0058.gpuspec.0002.fil"
-                        # default="../../filterbank/misc/"
-                          # "voyager_f1032192_t300_v2.fil"
-                          # "blc27_guppi_58410_37136_195860_FRB181017_0001.0000.h5"
-                          # "blc20_guppi_57991_66219_DIAG_FRB121102_0020.gpuspec.0001.fil"
-                        # default="../../filterbank/blc07/blc07_guppi_57650_67573_Voyager1_0002.gpuspec.0000.fil" # 16 integrations
-                        # >>>>
-                        default="../../filterbank/blc03/blc3_2bit_guppi_57386_VOYAGER1_0002.gpuspec.0000.fil" # 16 integrations, interesting pulses
+                        default="../../filterbank/misc/"
+                          # "voyager_f1032192_t300_v2.fil" # 2 integrations, 63 coarse channels, small
+                          # "blc27_guppi_58410_37136_195860_FRB181017_0001.0000.h5" # 44 coarse chans, 78 integrations
+                          "blc20_guppi_57991_66219_DIAG_FRB121102_0020.gpuspec.0001.fil" #  64 coarse chan, 512 fine, 3594240 integrations?
+                        # default="../../filterbank/blc07/"
+                        #   "blc07_guppi_57650_67573_Voyager1_0002.gpuspec.0000.fil" # 16 integrations
+                        # default="../../filterbank/blc03/"
+                        #         "blc3_2bit_guppi_57386_VOYAGER1_0002.gpuspec.0000.fil" # 16 integrations, interesting pulses
                         # default="../../filterbank/voyager1_rosetta_blc3/"
-                        #     "Voyager1.single_coarse.fine_res.h5" # 16 integrations
+                        #    "Voyager1.single_coarse.fine_res.h5" # 16 integrations, single coarse channel
                         #   "Voyager1.single_coarse.fine_res.fil"
                         )
     parser.add_argument('-o', dest='plots_path', type=str, default='./plots/',
@@ -125,6 +159,7 @@ def main():
 
     # the following reads through the filterbank file in order to calculate the number of coarse channels
     n_coarse_chan = int(obs_obj.calc_n_coarse_chan())
+
     n_fine_chan = obs_obj.header['nchans']
     fine_channel_bw_mhz = obs_obj.header['foff']
 
@@ -134,6 +169,9 @@ def main():
     else: # file data stores ascending frequency values
         start_freq = obs_obj.container.f_start
         stop_freq = obs_obj.container.f_stop - fine_channel_bw_mhz
+
+    coarse_channel_bw_mhz = np.abs(stop_freq - start_freq)/n_coarse_chan
+    print(f"coarse_channel_bw_mhz: {coarse_channel_bw_mhz}")
     print(f"fine_channel_bw_mhz: {fine_channel_bw_mhz:0.6e} start: {start_freq:0.6f} stop: {stop_freq:0.6f}")
 
     fine_channel_bw_hz = np.abs(fine_channel_bw_mhz) * 1E6
@@ -200,19 +238,27 @@ def main():
     perf_start_collection = perf_counter()
     for int_idx in range(n_integrations_to_process):
         cur_ps = grab_one_integration(obs_obj, int_idx)
+        # immediately convert power counts to db
+        cur_ps = safe_log(cur_ps)
         # TODO remove peaks here ?
-        # remove_n_peaks(cur_ps, 2)
+        # cur_ps = remove_peaks_vectorized(cur_ps, db_threshold=3)
+        # cur_ps = remove_narrow_peaks(cur_ps,db_threshold=3)
+        # softens narrow peaks but doesn't really remove them
         cur_ps = gaussian_filter1d(cur_ps, sigma=2)
         raw_psds[int_idx] = cur_ps
     print(f"Collection >>> elapsed: {perf_counter() - perf_start_collection:0.3f} seconds")
 
-    print(f"Raw PSDs range: {np.min(raw_psds):0.3e} ... {np.max(raw_psds):0.3e}")
+    min_raw_psd = np.min(raw_psds)
+    mean_raw_psd = np.mean(raw_psds)
+    max_raw_psd = np.max(raw_psds)
+
+    print(f"Raw PSDs range: {min_raw_psd:0.3e} ... {max_raw_psd:0.3e}")
     # perf_start_2dgaussian = perf_counter()
     # raw_psds = ndimage.gaussian_filter(raw_psds, sigma=1)
     # print(f"2dgaussian >> elapsed: {perf_counter() - perf_start_2dgaussian:0.3f} seconds")
     # print(f"Flt PSDs range: {np.min(raw_psds):0.3e} ... {np.max(raw_psds):0.3e}")
-    raw_psds = safe_log(raw_psds)
-    print(f"Log PSDs range: {np.min(raw_psds):0.3e} ... {np.max(raw_psds):0.3e}")
+    # raw_psds = safe_log(raw_psds)
+    # print(f"Log PSDs range: {np.min(raw_psds):0.3e} ... {np.max(raw_psds):0.3e}")
 
     # Using ascending frequency for all plots.
     if obs_obj.header['foff'] < 0:
@@ -222,7 +268,7 @@ def main():
     print(f"revised obs_freqs {obs_freqs[0]} ... {obs_freqs[-1]}")
 
     # decimate in order to have a reasonable plot size
-    n_down_buckets = 1024
+    n_down_buckets = n_coarse_chan
     decimated_psds = None
 
     decimation_factor = int(len(raw_psds[0]) / n_down_buckets)
@@ -232,7 +278,7 @@ def main():
         print(f"Decimating {n_input_buckets} fine channels to {n_down_buckets} buckets, ratio: {n_input_buckets / n_down_buckets} ...")
         # perf_start_decimation = perf_counter()
         # decimated_psds = np.array([gaussian_decimate(row, n_down_buckets) for row in raw_psds])
-        decimated_psds = raw_psds[::, ::decimation_factor] # TODO faster? Requires prior filtering though
+        decimated_psds = raw_psds[::, ::decimation_factor] # faster but requires prior filtering
         print(f"decimated_psds shape: {decimated_psds.shape}")
         # print(f"Decimating >>> elapsed: {perf_counter()  - perf_start_decimation:0.3f} seconds")
     else:
@@ -248,36 +294,34 @@ def main():
     print(f"rate_dpsd_dt: {rate_dpsd_dt.shape}")
     zero_row = np.zeros((1, rate_dpsd_dt.shape[1]))
     rate_dpsd_dt = np.vstack((zero_row, rate_dpsd_dt))
+    # scale the rate of change relative to the PSD at that point
+    rate_dpsd_dt = np.divide(rate_dpsd_dt, decimated_psds)
 
-    # Compute the rate of change between frequencies
-    psd_jumps_freq = np.diff(decimated_psds, axis=1)
-    print(f"psd_jumps_freq: {psd_jumps_freq.shape}")
-    freq_per_dec_bucket = 1 # TODO temporary
-    rate_dpsd_df = psd_jumps_freq / freq_per_dec_bucket
-    zero_column = np.zeros((rate_dpsd_df.shape[0], 1))
-    rate_dpsd_df = np.hstack((rate_dpsd_df, zero_column))
+    # default_psd = mean_raw_psd
+    # abs_dpsd_dt = np.abs(rate_dpsd_dt)
+    # threshold_frac = 0.6
+    # thresh_dpsd_dt = np.max(abs_dpsd_dt) * threshold_frac
+    # thresholded_psds = np.where(abs_dpsd_dt > thresh_dpsd_dt, decimated_psds, decimated_psds*(threshold_frac/2))
 
     plot_psds = decimated_psds
     # plot_psds = ndimage.maximum_filter(decimated_psds, size=6)
+    # plot_psds = thresholded_psds
 
     plot_rate_dpsd_dt = rate_dpsd_dt
-    plot_rate_dpsd_df = rate_dpsd_df
 
-    print(f"shape psds: {plot_psds.shape} dpsd_dt: {plot_rate_dpsd_dt.shape} dpsd_df: {plot_rate_dpsd_df.shape}")
+    print(f"shape psds: {plot_psds.shape} dpsd_dt: {plot_rate_dpsd_dt.shape} ")
 
     perf_start_plotting = perf_counter()
 
-    fig, axes = plt.subplots(nrows=3, figsize=full_screen_dims,  sharex=True, sharey=True, constrained_layout=True)
+    fig, axes = plt.subplots(nrows=2, figsize=full_screen_dims,  sharex=True, sharey=True, constrained_layout=True)
     fig.suptitle(f"{start_freq:0.4f} | {display_file_name}")
 
-    cmap0 = matplotlib.colormaps['viridis']
-    cmap1 = matplotlib.colormaps['inferno'] # other options: 'Spectral'
-    cmap2 = matplotlib.colormaps['viridis']
+    cmap0 = matplotlib.colormaps['magma'] #'viridis']
+    cmap1 = matplotlib.colormaps['inferno'] # other options: 'magma', 'plasma'
 
     img0 = axes[0].imshow(plot_psds.T, aspect='auto', cmap=cmap0)
     img1 = axes[1].imshow(plot_rate_dpsd_dt.T, aspect='auto', cmap=cmap1)
-    img2 = axes[2].imshow(plot_rate_dpsd_df.T, aspect='auto', cmap=cmap2)
-    axes[2].set_xlabel('Timestep')
+    axes[-1].set_xlabel('Timestep')
 
     # y_bott, y_top = axes[0].get_ylim()
     # x_left, x_right = axes[0].get_xlim()
@@ -294,11 +338,6 @@ def main():
     cbar1 = fig.colorbar(img1, ax=axes[1])
     cbar1.set_label('rate ΔdB/dt', rotation=270, labelpad=15)
     cbar1.ax.yaxis.set_ticks_position('left')
-
-    cbar2 = fig.colorbar(img2, ax=axes[2])
-    cbar2.set_label('rate ΔdB/df', rotation=270, labelpad=15)
-    # cbar2.set_label('ΔdB', rotation=270, labelpad=15)
-    cbar2.ax.yaxis.set_ticks_position('left')
 
     orig_yticks = axes[0].get_yticks()
     print(f"axes0 orig_yticks ({len(orig_yticks)}) {orig_yticks}")
@@ -319,7 +358,7 @@ def main():
     print(f"ytick_labels: {ytick_labels}")
     axes[0].set_yticklabels(ytick_labels)
     axes[1].set_yticklabels(ytick_labels)
-    axes[2].set_yticklabels(ytick_labels)
+
     # TODO use a FixedLocator instead??
     # the following resets what actually gets plotted, rather than just the labels... 8^(
     # axes[0].set_yticks(ticks=orig_yticks, labels=ytick_labels)
