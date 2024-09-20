@@ -70,7 +70,8 @@ def skip_to_block(bb_reader, dest_block_num=2):
 
 
 
-def process_dual_pol_block(chan_pol_a=None, chan_pol_b=None, n_freq_bins=1024,  fs=100e6):
+def process_dual_pol_block(stft_obj=None, full_energy_correction=None, chan_pol_a=None, chan_pol_b=None, n_freq_bins=1024, fs=100e6):
+    perf_start = perf_counter()
     if chan_pol_a is None:
         chan_pol_a = []
     if chan_pol_b is None:
@@ -83,22 +84,24 @@ def process_dual_pol_block(chan_pol_a=None, chan_pol_b=None, n_freq_bins=1024,  
     # assume that signals of interest will be correlated in A and B polarities
     # correlated_signal = np.multiply(chan_pol_a_view, np.conjugate(chan_pol_b_view))
 
-    window = scipy.signal.get_window('hann', n_freq_bins)  # Hanning window
-    energy_correction = 1 / np.sum(window ** 2)
-    stft_obj = ShortTimeFFT(fs=fs, win=window, hop=n_freq_bins // 2, fft_mode='centered')
-
-    # zxx_all = stft_obj.stft(correlated_signal)
-    # block_psd = (2 / (n_freq_bins * fs)) * (np.abs(zxx_all) ** 2) / energy_correction  # PSD for a one-sided spectrum
+    # window = scipy.signal.get_window('hann', n_freq_bins)  # Hanning window
+    # energy_correction = 1 / np.sum(window ** 2)
+    # full_correction = (2 / (n_freq_bins * fs)) / energy_correction
+    # stft_obj = ShortTimeFFT(fs=fs, win=window, hop=n_freq_bins // 2, fft_mode='centered')
 
     zxx_pol_a = stft_obj.stft(chan_pol_a_view)
-    pol_a_psd = (np.abs(zxx_pol_a) ** 2)/energy_correction # TODO testing against single-block plot
+    # pol_a_psd = (np.abs(zxx_pol_a) ** 2)/energy_correction # for testing against single-block plot
     # pol_a_psd = (2 / (n_freq_bins * fs)) * (np.abs(zxx_pol_a) ** 2) / energy_correction  # PSD for a one-sided spectrum
+    pol_a_psd = full_energy_correction * (np.abs(zxx_pol_a) ** 2)
     block_psd = pol_a_psd
 
     zxx_pol_b = stft_obj.stft(chan_pol_b_view)
-    pol_b_psd = (np.abs(zxx_pol_b) ** 2)/ energy_correction# TODO testing against single-block plot
+    # pol_b_psd = (np.abs(zxx_pol_b) ** 2)/ energy_correction# for testing against single-block plot
     # pol_b_psd = (2 / (n_freq_bins * fs)) * (np.abs(zxx_pol_b) ** 2) / energy_correction  # PSD for a one-sided spectrum
-    block_psd += pol_b_psd # TODO use correlation instead?
+    pol_b_psd = full_energy_correction * (np.abs(zxx_pol_b) ** 2)
+    block_psd += pol_b_psd # TODO use correlation instead? these are two orthogonal polarizations
+
+    # print(f"Dual PSD calc >>> elapsed: {perf_counter() - perf_start:0.3f} seconds")
 
     return block_psd
 
@@ -244,15 +247,23 @@ def process_chan_over_all_blocks(raw_reader:GuppiRaw=None, chan_idx:int=0, n_blo
     print(f"Collecting chan {chan_idx+1} PSDs over n_blocks: {n_blocks}")
     chan_psds_perf_start = perf_counter()
     block_range = range(n_blocks)
+
+    # prepare reusable STFT objects
+    window = scipy.signal.get_window('hann', n_freq_bins)  # Hanning window
+    energy_correction = 1 / np.sum(window ** 2)
+    full_energy_correction = (2 / (n_freq_bins * fs)) / energy_correction
+    stft_obj = ShortTimeFFT(fs=fs, win=window, hop=n_freq_bins // 2, fft_mode='centered')
+
     for block_idx in block_range:
         # print(f"Processing chan {chan_idx} block: {block_idx}/{n_blocks}")
-        block_perf_start = perf_counter()
+        perf_start_blockchan_process = perf_counter()
+        perf_start_read_block = perf_start_blockchan_process
         block_hdr, data_pol_a, data_pol_b = raw_reader.read_next_data_block_int8()
         # print(f"block_hdr: {block_hdr}")
         if block_hdr is None:
             print(f"block_hdr: {block_hdr}")
             break
-        # print(f"elapsed: {perf_counter() - perf_start:0.3f} seconds")
+        # print(f"Read block {block_idx+1} >>> elapsed: {perf_counter() - perf_start_read_block:0.3f} seconds")
 
         chan_pol_a = data_pol_a[chan_idx]
         chan_pol_b = data_pol_b[chan_idx]
@@ -262,7 +273,7 @@ def process_chan_over_all_blocks(raw_reader:GuppiRaw=None, chan_idx:int=0, n_blo
             print(f"data_pol_a: {data_pol_a.shape} {data_pol_a.dtype}")
             print(f"chan_pol_a : {chan_pol_a.shape} samples_per_chan_per_block: {samples_per_chan_per_block}")
 
-        block_psd = process_dual_pol_block(chan_pol_a, chan_pol_b, n_freq_bins, fs)
+        block_psd = process_dual_pol_block(stft_obj, full_energy_correction, chan_pol_a, chan_pol_b, n_freq_bins, fs)
         # print(f"block_psd {block_psd.shape}") # something like (n_freq_bins, samples_per_chan_per_block)
 
         if all_chan_psds is None:
@@ -277,7 +288,7 @@ def process_chan_over_all_blocks(raw_reader:GuppiRaw=None, chan_idx:int=0, n_blo
         block_inset = block_idx * block_psd.shape[1]
         # print(f"block_inset {block_inset}")
         all_chan_psds[0:block_psd.shape[0], block_inset:block_inset+block_psd.shape[1]] = block_psd
-        print(f"Chan {chan_idx+1} Block {block_idx+1} / {n_blocks} PDSs >>> elapsed: {perf_counter() - block_perf_start:0.3f} seconds")
+        print(f"Chan {chan_idx+1} Block {block_idx+1} / {n_blocks} PDSs >>> elapsed: {perf_counter() - perf_start_blockchan_process:0.3f} seconds")
     print(f"Collecting chan {chan_idx+1} PDSs >>> elapsed: {perf_counter() - chan_psds_perf_start:0.3f} seconds")
 
     # print(f"init chan psds: {np.min(all_chan_psds):0.3e} ... {np.max(all_chan_psds):0.3e}")
