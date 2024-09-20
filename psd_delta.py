@@ -29,33 +29,12 @@ from time import perf_counter
 
 from scipy.ndimage import gaussian_filter1d
 
+def round_to_nearest_power_of_two(n):
+    return int(np.power(2, np.round(np.log2(n))))
 
 def normalize_data(data):
     return (data - np.mean(data)) / np.std(data)
 
-def remove_narrow_peaks(arr_db, db_threshold=5, peak_width=2):
-    # Convert the signal to dB scale
-    # arr_db = safe_log(arr)
-
-    # Identify peaks, with a minimum width of 1 or 2 samples
-    peaks, properties = find_peaks(arr_db, width=peak_width)
-
-    # Create a copy of the array to modify
-    arr_cleaned = arr_db.copy()
-
-    peak_half_width = int(peak_width // 2)
-    # Iterate over the found peaks
-    for peak in peaks:
-        # Check if the peak is at least `db_threshold` dB higher than its neighbors
-        left_neighbor = arr_db[peak-peak_half_width] if peak-peak_half_width >= 0 else arr_db[peak]
-        right_neighbor = arr_db[peak+peak_half_width] if peak+peak_half_width < len(arr_db) else arr_db[peak]
-        surrounding_avg = (left_neighbor + right_neighbor) / 2
-
-        # If the peak exceeds the threshold, smooth it out by setting to surrounding average
-        if arr_db[peak] - surrounding_avg >= db_threshold:
-            arr_cleaned[peak] = surrounding_avg
-
-    return arr_cleaned
 def remove_peaks_vectorized(arr_db, db_threshold=5):
 
     # Identify peaks: Values greater than both their left and right neighbors
@@ -107,8 +86,8 @@ def main():
                         #   "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_13603_BLGCsurvey_Cband_C12_0058.gpuspec.0002.fil"
                         default="../../filterbank/misc/"
                           # "voyager_f1032192_t300_v2.fil" # 2 integrations, 63 coarse channels, small
-                          # "blc27_guppi_58410_37136_195860_FRB181017_0001.0000.h5" # 44 coarse chans, 78 integrations
-                          "blc20_guppi_57991_66219_DIAG_FRB121102_0020.gpuspec.0001.fil" #  64 coarse chan, 512 fine, 3594240 integrations?
+                          "blc27_guppi_58410_37136_195860_FRB181017_0001.0000.h5" # 44 coarse chans, 78 integrations
+                          # "blc20_guppi_57991_66219_DIAG_FRB121102_0020.gpuspec.0001.fil" #  64 coarse chan, 512 fine, 3594240 integrations?
                         # default="../../filterbank/blc07/"
                         #   "blc07_guppi_57650_67573_Voyager1_0002.gpuspec.0000.fil" # 16 integrations
                         # default="../../filterbank/blc03/"
@@ -146,7 +125,7 @@ def main():
     # plt.figure(figsize=full_screen_dims)
     # obs_obj.plot_spectrum(logged=True)
     # plt.show()
-    #
+
     # plt.figure(figsize=full_screen_dims)
     # obs_obj.plot_waterfall()
     # plt.show()
@@ -197,16 +176,16 @@ def main():
     # assert n_fine_chan == obs_obj.data.shape[2]
 
     n_integrations_to_process = n_integrations_input
-    if n_integrations_input > 64:
-        n_integrations_to_process = 64
+    if n_integrations_input > 256:
+        n_integrations_to_process = 256
         print(f"clamping n_integrations_to_process to {n_integrations_to_process}")
 
     # tsamp is "Time integration sampling rate in seconds" (from rawspec)
     integration_period_sec = float(obs_obj.header['tsamp'])
     print(f"Integration period (tsamp): {integration_period_sec:0.6f} seconds")
-    sampling_rate_mhz = np.abs(n_fine_chan * fine_channel_bw_mhz)
-    print(f"Total sampling bandwidth: {sampling_rate_mhz} MHz")
-    sampling_rate_hz = sampling_rate_mhz * 1E6
+    total_sampling_rate_mhz = np.abs(n_fine_chan * fine_channel_bw_mhz)
+    print(f"Total sampling bandwidth: {total_sampling_rate_mhz} MHz")
+    sampling_rate_hz = total_sampling_rate_mhz * 1E6
     # spectra per integration is n
     spectrum_sampling_period = n_fine_chan / sampling_rate_hz
     n_fine_spectra_per_integration = int(np.ceil(integration_period_sec / spectrum_sampling_period))
@@ -238,27 +217,19 @@ def main():
     perf_start_collection = perf_counter()
     for int_idx in range(n_integrations_to_process):
         cur_ps = grab_one_integration(obs_obj, int_idx)
-        # immediately convert power counts to db
+        # convert power counts to db
         cur_ps = safe_log(cur_ps)
-        # TODO remove peaks here ?
-        # cur_ps = remove_peaks_vectorized(cur_ps, db_threshold=3)
-        # cur_ps = remove_narrow_peaks(cur_ps,db_threshold=3)
-        # softens narrow peaks but doesn't really remove them
-        cur_ps = gaussian_filter1d(cur_ps, sigma=2)
+        # The filt data often has one or more narrow "DC-offset" peaks -- we attempt to remove those here
+        cur_ps = remove_peaks_vectorized(cur_ps, db_threshold=3)
+        # this performs a low-pass filter on changes between adjacent frequency bins
+        cur_ps = gaussian_filter1d(cur_ps, sigma=3)
         raw_psds[int_idx] = cur_ps
     print(f"Collection >>> elapsed: {perf_counter() - perf_start_collection:0.3f} seconds")
 
     min_raw_psd = np.min(raw_psds)
-    mean_raw_psd = np.mean(raw_psds)
     max_raw_psd = np.max(raw_psds)
 
     print(f"Raw PSDs range: {min_raw_psd:0.3e} ... {max_raw_psd:0.3e}")
-    # perf_start_2dgaussian = perf_counter()
-    # raw_psds = ndimage.gaussian_filter(raw_psds, sigma=1)
-    # print(f"2dgaussian >> elapsed: {perf_counter() - perf_start_2dgaussian:0.3f} seconds")
-    # print(f"Flt PSDs range: {np.min(raw_psds):0.3e} ... {np.max(raw_psds):0.3e}")
-    # raw_psds = safe_log(raw_psds)
-    # print(f"Log PSDs range: {np.min(raw_psds):0.3e} ... {np.max(raw_psds):0.3e}")
 
     # Using ascending frequency for all plots.
     if obs_obj.header['foff'] < 0:
@@ -268,7 +239,14 @@ def main():
     print(f"revised obs_freqs {obs_freqs[0]} ... {obs_freqs[-1]}")
 
     # decimate in order to have a reasonable plot size
+    minimum_effective_bw_mz = 10.0 # TODO we could calc this based on some file characteristic
+    raw_effective_buckets = np.ceil(total_sampling_rate_mhz / minimum_effective_bw_mz)
+    n_effective_buckets = round_to_nearest_power_of_two(raw_effective_buckets)
+    print(f"raw_effective_buckets: {raw_effective_buckets} n_effective_buckets: {n_effective_buckets}")
+
     n_down_buckets = n_coarse_chan
+    if n_down_buckets > n_effective_buckets:
+        n_down_buckets = n_effective_buckets
     decimated_psds = None
 
     decimation_factor = int(len(raw_psds[0]) / n_down_buckets)
@@ -286,19 +264,20 @@ def main():
         decimated_psds = raw_psds
 
     # Calculate diffs between next and previous PSD (integration) rows
-    # psd_jumps_time = decimated_psds[1:] - decimated_psds[:-1]
-    psd_jumps_time = np.diff(decimated_psds, axis=0)
+    # psd_diffs = decimated_psds[1:] - decimated_psds[:-1]
+    psd_diffs = np.diff(decimated_psds, axis=0)
     # Compute the rate of change between time steps
     sec_per_integration = integration_period_sec / n_integrations_to_process
-    rate_dpsd_dt = psd_jumps_time / sec_per_integration
-    print(f"rate_dpsd_dt: {rate_dpsd_dt.shape}")
-    zero_row = np.zeros((1, rate_dpsd_dt.shape[1]))
-    rate_dpsd_dt = np.vstack((zero_row, rate_dpsd_dt))
-    # scale the rate of change relative to the PSD at that point
-    rate_dpsd_dt = np.divide(rate_dpsd_dt, decimated_psds)
+    dpsd_dt = psd_diffs / sec_per_integration
+    print(f"dpsd_dt: {dpsd_dt.shape}")
+    # rematch the input shape
+    zero_row = np.zeros((1, dpsd_dt.shape[1]))
+    dpsd_dt = np.vstack((zero_row, dpsd_dt))
+    # scale rate of change relative to the PSD at that point
+    dpsd_dt = np.divide(dpsd_dt, decimated_psds)
 
     # default_psd = mean_raw_psd
-    # abs_dpsd_dt = np.abs(rate_dpsd_dt)
+    # abs_dpsd_dt = np.abs(dpsd_dt)
     # threshold_frac = 0.6
     # thresh_dpsd_dt = np.max(abs_dpsd_dt) * threshold_frac
     # thresholded_psds = np.where(abs_dpsd_dt > thresh_dpsd_dt, decimated_psds, decimated_psds*(threshold_frac/2))
@@ -307,20 +286,20 @@ def main():
     # plot_psds = ndimage.maximum_filter(decimated_psds, size=6)
     # plot_psds = thresholded_psds
 
-    plot_rate_dpsd_dt = rate_dpsd_dt
+    # plot_dpsd_dt = dpsd_dt
+    plot_dpsd_dt = ndimage.gaussian_filter1d(dpsd_dt, axis=0, sigma=3)
 
-    print(f"shape psds: {plot_psds.shape} dpsd_dt: {plot_rate_dpsd_dt.shape} ")
+    print(f"shape psds: {plot_psds.shape} dpsd_dt: {plot_dpsd_dt.shape} ")
 
     perf_start_plotting = perf_counter()
-
     fig, axes = plt.subplots(nrows=2, figsize=full_screen_dims,  sharex=True, sharey=True, constrained_layout=True)
-    fig.suptitle(f"{start_freq:0.4f} | {display_file_name}")
+    fig.suptitle(f"{start_freq:0.4f} | {display_file_name} | N{n_down_buckets} | T{n_integrations_to_process}")
 
     cmap0 = matplotlib.colormaps['magma'] #'viridis']
     cmap1 = matplotlib.colormaps['inferno'] # other options: 'magma', 'plasma'
 
     img0 = axes[0].imshow(plot_psds.T, aspect='auto', cmap=cmap0)
-    img1 = axes[1].imshow(plot_rate_dpsd_dt.T, aspect='auto', cmap=cmap1)
+    img1 = axes[1].imshow(plot_dpsd_dt.T, aspect='auto', cmap=cmap1)
     axes[-1].set_xlabel('Timestep')
 
     # y_bott, y_top = axes[0].get_ylim()
@@ -354,10 +333,10 @@ def main():
     # matplot places the first frequency offscreen, for whatever reason...
     tick_freqs -= tick_step_mhz
     print(f"tick_freqs ({len(tick_freqs)}): {tick_freqs}")
-    ytick_labels = [f"{freq:0.4f}" for freq in tick_freqs]
+    ytick_labels = [f"{freq:0.3f}" for freq in tick_freqs]
     print(f"ytick_labels: {ytick_labels}")
-    axes[0].set_yticklabels(ytick_labels)
-    axes[1].set_yticklabels(ytick_labels)
+    axes[0].set_yticklabels(ytick_labels,  rotation=30)
+    axes[1].set_yticklabels(ytick_labels,  rotation=30)
 
     # TODO use a FixedLocator instead??
     # the following resets what actually gets plotted, rather than just the labels... 8^(
@@ -369,7 +348,7 @@ def main():
     print(f"final_ylabels ({len(final_ylabels)}) : {final_ylabels}")
     print(f"Plotting >>> elapsed: {perf_counter()  - perf_start_plotting:0.3f} seconds")
 
-    img_save_path = f"{plots_path}pow_diffs/{display_file_name}.powdiff.png"
+    img_save_path = f"{plots_path}pow_diffs/{display_file_name}_N{n_down_buckets}_T{n_integrations_to_process}_dpsd.png"
     print(f"saving image to:\n{img_save_path}")
     plt.savefig(img_save_path)
     plt.show()
