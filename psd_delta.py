@@ -87,12 +87,12 @@ def main():
                             # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_01220_BLGCsurvey_Cband_B04_0018.gpuspec.0002.fil"
                             # "spliced_blc40414243444546o7o0515253545556o7o0616263646566o7o071727374757677_guppi_58702_18718_BLGCsurvey_Cband_C01_0026.gpuspec.0002.fil"
 
-                        # default="../../filterbank/misc/"
+                        default="../../filterbank/misc/"
                                 # "blc20_guppi_57991_66219_DIAG_FRB121102_0020.gpuspec.0001.fil" #  64 coarse chan, 512 fine, 3594240 integrations?
                                 # "voyager_f1032192_t300_v2.fil" # 2 integrations, 63 coarse channels, small
-                          # "blc27_guppi_58410_37136_195860_FRB181017_0001.0000.h5" # 44 coarse chans, 78 integrations
-                        default="../../filterbank/blc07/"
-                          "blc07_guppi_57650_67573_Voyager1_0002.gpuspec.0000.fil" # 16 integrations
+                          "blc27_guppi_58410_37136_195860_FRB181017_0001.0000.h5" # 44 coarse chans, 78 integrations
+                        # default="../../filterbank/blc07/"
+                        #   "blc07_guppi_57650_67573_Voyager1_0002.gpuspec.0000.fil" # 16 integrations
                         # default="../../filterbank/blc03/"
                                 # "blc3_2bit_guppi_57386_VOYAGER1_0002.gpuspec.0000.fil" # 16 integrations, 64 coarse, 66125824 fine
                         # default="../../filterbank/voyager1_rosetta_blc3/"
@@ -346,7 +346,7 @@ def main():
     img_save_path = f"{plots_path}pow_diffs/{display_file_name}_N{n_down_buckets}_T{n_integrations_to_process}_dpsd.png"
     print(f"saving image to:\n{img_save_path}")
     plt.savefig(img_save_path)
-    plt.show()
+    # plt.show()
 
 
 
