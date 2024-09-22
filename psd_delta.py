@@ -21,7 +21,9 @@ from sigmf import sigmffile, SigMFFile
 from blimpy import Waterfall
 import matplotlib.pyplot as plt
 import scipy
-matplotlib.use('qtagg')
+
+# the following may only be required if doing interactive matplot on some platforms:
+# matplotlib.use('qtagg')
 
 # performance monitoring
 from time import perf_counter
@@ -107,6 +109,8 @@ def main():
     # freq_of_interest = 8419.2972
     data_path = args.src_data_path
     plots_path = args.plots_path
+
+    perf_start_file_ultimate = perf_counter()
 
     print(f'Loading file info: {data_path} ...')
     logging.basicConfig(level=os.environ.get("LOGLEVEL", "DEBUG"))
@@ -348,6 +352,8 @@ def main():
     plt.savefig(img_save_path)
     # plt.show()
 
+
+    print(f"Ultimate >>> elapsed: {perf_counter()  - perf_start_file_ultimate:0.3f} seconds")
 
 
 if __name__ == "__main__":
