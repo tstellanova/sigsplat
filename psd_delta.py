@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """
 Examine filterbank ('.fil') or HDF5 ('.h5') files,
 assumed to be from Breakthrough Listen archives
