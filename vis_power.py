@@ -74,10 +74,6 @@ def gaussian_decimate(data, num_out_buckets, sigma=1.0):
 def grab_one_integration(obs_obj:Waterfall=None, integration_idx=0):
     obs_obj.read_data(t_start=integration_idx, t_stop=integration_idx+1)
     _, cur_ps = obs_obj.grab_data()
-    if cur_ps.dtype != np.float32:
-        # should we scale these, or does it not matter?
-        cur_ps = np.float32(cur_ps)
-    # print(f"integration {integration_idx} {cur_ps.shape} {cur_ps.dtype}")
     return cur_ps
 
 def main():
@@ -85,26 +81,18 @@ def main():
     parser = argparse.ArgumentParser(description='Analyze power correlation of filterbank files')
     parser.add_argument('src_data_path', nargs='?',
                         help="Source hdf5 (.h5) or filerbank (.fil) file path",
-                        default="../../filterbank/blgcsurvey_cband/"
-                            "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_10506_BLGCsurvey_Cband_C06_0048.gpuspec.8.0001.fil"
-                                # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_10506_BLGCsurvey_Cband_C06_0048.gpuspec.0002.fil"
-                                # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_09886_BLGCsurvey_Cband_C06_0046.gpuspec.0002.fil"
-                            # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_09886_BLGCsurvey_Cband_C06_0046.gpuspec.8.0001.fil"
-                            # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_11437_BLGCsurvey_Cband_C11_0051.gpuspec.8.0001.fil"
-                            # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_12984_BLGCsurvey_Cband_C12_0056.gpuspec.8.0001.fil"
-                            # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_10818_BLGCsurvey_Cband_C11_0049.gpuspec.8.0001.fil"
+                        # default="../../filterbank/blgcsurvey_cband/"
                             # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_13603_BLGCsurvey_Cband_C12_0058.gpuspec.0000.fil" # LORGE 16 ints, 1664 coarse, 1744830464 fine
-                            # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_13603_BLGCsurvey_Cband_C12_0058.gpuspec.8.0001.fil" # MEDIUM n_coarse_chan: 1664 n_fine_chan: 13312 fine_channel_bw_hz: 366210.9375 suspiciously zero change the entire time??
-                            # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_13603_BLGCsurvey_Cband_C12_0058.gpuspec.0002.fil" # SMOL ints: 279 coarse: 1664 n_fine_chan: 1703936 n_fine_per_coarse: 1024.0
-
-                        # "spliced_blc00010203040506o7o01113141516o7o0212223242526o7o031323334353637_guppi_58705_14221_BLGCsurvey_Cband_C12_0060.gpuspec.0002.fil" # 279 ints, 1664 coarse, 1703936 fine
+                            # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_13603_BLGCsurvey_Cband_C12_0058.gpuspec.0002.fil" # 279 ints, 1664 coarse,
+                            # "spliced_blc00010203040506o7o01113141516o7o0212223242526o7o031323334353637_guppi_58705_14221_BLGCsurvey_Cband_C12_0060.gpuspec.0002.fil" # 279 ints, 1664 coarse, 1703936 fine
                             #  "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_18741_BLGCsurvey_Cband_A00_0063.gpuspec.0002.fil" # 120 ints, 1164 coarse, 1703936 fine
                             # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_01220_BLGCsurvey_Cband_B04_0018.gpuspec.0002.fil"
                             # "spliced_blc40414243444546o7o0515253545556o7o0616263646566o7o071727374757677_guppi_58702_18718_BLGCsurvey_Cband_C01_0026.gpuspec.0002.fil"
-                        # default="../../filterbank/misc/"
+
+                        default="../../filterbank/misc/"
                                 # "blc20_guppi_57991_66219_DIAG_FRB121102_0020.gpuspec.0001.fil" #  64 coarse chan, 512 fine, 3594240 integrations?
                                 # "voyager_f1032192_t300_v2.fil" # 2 integrations, 63 coarse channels, small
-                          # "blc27_guppi_58410_37136_195860_FRB181017_0001.0000.h5" # 44 coarse chans, 78 integrations
+                          "blc27_guppi_58410_37136_195860_FRB181017_0001.0000.h5" # 44 coarse chans, 78 integrations
                         # default="../../filterbank/blc07/"
                         #   "blc07_guppi_57650_67573_Voyager1_0002.gpuspec.0000.fil" # 16 integrations
                         # default="../../filterbank/blc03/"
@@ -133,7 +121,6 @@ def main():
     logging.getLogger("blimpy.io.base_reader").setLevel(logging.DEBUG)
     logging.getLogger("blimpy").setLevel(logging.DEBUG)
 
-    my_dpi=300
     full_screen_dims=(16, 10)
 
     perf_start = perf_counter()
@@ -180,8 +167,11 @@ def main():
     # We don't actually handle anything other than Stokes I at the moment
     assert n_polarities_stored == 1
 
-    n_fine_per_coarse = n_fine_chan / n_coarse_chan
-    print(f"n_integ: {n_integrations_input} n_coarse_chan: {n_coarse_chan} n_fine_chan: {n_fine_chan} n_fine_per_coarse: {n_fine_per_coarse}")
+    # if obs_obj.container.isheavy():
+    #     selection_size_bytes =  obs_obj.container._calc_selection_size()
+    #     selection_shape = obs_obj.container.selection_shape
+    #     data_array_size = obs_obj.container.max_data_array_size
+    #     print(f"heavy selection_shape: {selection_shape}  selection_size_bytes: {selection_size_bytes} data_array_size: {data_array_size}")
 
     # print(f"data shape: {obs_obj.data.shape} "
     #       f"s/b: integrations {n_integrations_input}, polarities {n_polarities_stored}, n_fine_chan {n_fine_chan} ")
@@ -193,8 +183,8 @@ def main():
     # assert n_fine_chan == obs_obj.data.shape[2]
 
     n_integrations_to_process = n_integrations_input
-    if n_integrations_input > 512:
-        n_integrations_to_process = 512
+    if n_integrations_input > 280:
+        n_integrations_to_process = 280
         print(f"clamping n_integrations_to_process to {n_integrations_to_process}")
 
     # tsamp is "Time integration sampling rate in seconds" (from rawspec)
@@ -212,19 +202,8 @@ def main():
     # tsamp   cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i]; // Time integration sampling rate in seconds.
 
     file_nbits = int(obs_obj.header['nbits'])
-
-    if file_nbits != 32:
-        print(f"WARN file nbits: {file_nbits}")
-    # assert file_nbits == 32
-
-
-    if obs_obj.container.isheavy():
-        selection_size_bytes =  obs_obj.container._calc_selection_size()
-        selection_shape = obs_obj.container.selection_shape
-        data_array_size = obs_obj.container.max_data_array_size
-        print(f"heavy selection_shape: {selection_shape}  selection_size_bytes: {selection_size_bytes} data_array_size: {data_array_size}")
-        # reload the obs_obj incrementally
-        obs_obj = blimpy.Waterfall(data_path, max_load=8, t_start=0, t_stop=1)
+    # print(f"file nbits: {file_nbits}")
+    assert file_nbits == 32
 
     print(f"Load first integration from disk...")
     perf_start_first_int_load = perf_counter()
@@ -248,7 +227,7 @@ def main():
         # convert power counts to db
         cur_ps = safe_log(cur_ps)
         # The filt data often has one or more narrow "DC-offset" peaks -- we attempt to remove those here
-        # cur_ps = remove_peaks_vectorized(cur_ps, db_threshold=3)
+        cur_ps = remove_peaks_vectorized(cur_ps, db_threshold=3)
         # this performs a low-pass filter on changes between adjacent frequency bins
         cur_ps = gaussian_filter1d(cur_ps, sigma=3)
         raw_psds[int_idx] = cur_ps
@@ -266,11 +245,9 @@ def main():
 
     print(f"revised obs_freqs {obs_freqs[0]} ... {obs_freqs[-1]}")
 
-    coarse_chan_multiple = 4
-    lane_bandwidth_mhz = coarse_channel_bw_mhz * coarse_chan_multiple
-    coarse_chan_multiple = total_sampling_rate_mhz / coarse_channel_bw_mhz
     # decimate in order to have a reasonable plot size
-    raw_effective_buckets = np.ceil(total_sampling_rate_mhz / lane_bandwidth_mhz)
+    minimum_effective_bw_mz = 10.0 # TODO we could calc this based on some file characteristic
+    raw_effective_buckets = np.ceil(total_sampling_rate_mhz / minimum_effective_bw_mz)
     n_effective_buckets = round_to_nearest_power_of_two(raw_effective_buckets)
     print(f"raw_effective_buckets: {raw_effective_buckets} n_effective_buckets: {n_effective_buckets}")
 
@@ -297,30 +274,32 @@ def main():
     # psd_diffs = decimated_psds[1:] - decimated_psds[:-1]
     psd_diffs = np.diff(decimated_psds, axis=0)
     # Compute the rate of change between time steps
-    # sec_per_integration = 1
-    # if file_nbits == 32:
-    # sec_per_integration = integration_period_sec / n_integrations_to_process
-    dpsd_dt = psd_diffs / integration_period_sec
-    print(f"dpsd_dt: {dpsd_dt.shape} {dpsd_dt.dtype}")
+    sec_per_integration = integration_period_sec / n_integrations_to_process
+    dpsd_dt = psd_diffs / sec_per_integration
+    print(f"dpsd_dt: {dpsd_dt.shape}")
     # rematch the input shape
     zero_row = np.zeros((1, dpsd_dt.shape[1]))
     dpsd_dt = np.vstack((zero_row, dpsd_dt))
-
-    decimated_psds += sys.float_info.epsilon
-    if np.isnan(decimated_psds.any()):
-        print(f"Warning: isnan")
     # scale rate of change relative to the PSD at that point
-    if file_nbits == 32:
-        dpsd_dt = np.divide(dpsd_dt, decimated_psds)
+    dpsd_dt = np.divide(dpsd_dt, decimated_psds)
+
+    # default_psd = mean_raw_psd
+    # abs_dpsd_dt = np.abs(dpsd_dt)
+    # threshold_frac = 0.6
+    # thresh_dpsd_dt = np.max(abs_dpsd_dt) * threshold_frac
+    # thresholded_psds = np.where(abs_dpsd_dt > thresh_dpsd_dt, decimated_psds, decimated_psds*(threshold_frac/2))
 
     plot_psds = decimated_psds
+    # plot_psds = ndimage.maximum_filter(decimated_psds, size=6)
+    # plot_psds = thresholded_psds
 
     plot_dpsd_dt = dpsd_dt
+    # plot_dpsd_dt = ndimage.gaussian_filter1d(dpsd_dt, axis=0, sigma=3)
 
     print(f"shape psds: {plot_psds.shape} dpsd_dt: {plot_dpsd_dt.shape} ")
 
     perf_start_plotting = perf_counter()
-    fig, axes = plt.subplots(nrows=2, figsize=full_screen_dims, dpi=my_dpi, sharex=True, sharey=True, constrained_layout=True)
+    fig, axes = plt.subplots(nrows=2, figsize=full_screen_dims,  sharex=True, sharey=True, constrained_layout=True)
     fig.suptitle(f"{start_freq:0.4f} | {display_file_name} | N{n_down_buckets} | T{n_integrations_to_process}")
 
     cmap0 = matplotlib.colormaps['magma']
@@ -339,21 +318,22 @@ def main():
     cbar1.ax.yaxis.set_ticks_position('left')
 
     orig_yticks = axes[0].get_yticks()
-    # print(f"axes0 orig_yticks ({len(orig_yticks)}) {orig_yticks}")
+    print(f"axes0 orig_yticks ({len(orig_yticks)}) {orig_yticks}")
     orig_ylabels = axes[0].get_yticklabels()
-    # print(f"axes0 orig_ylabels ({len(orig_ylabels)}) {orig_ylabels}")
+    print(f"axes0 orig_ylabels ({len(orig_ylabels)}) {orig_ylabels}")
 
+    print(f"plotted_freqs {plotted_freqs[0]} ... {plotted_freqs[-1]}")
     plotted_freq_range = plotted_freqs[-1] - plotted_freqs[0]
-    print(f"plotted_freqs {plotted_freqs[0]:0.3f} ... {plotted_freqs[-1]:0.3f} ( {plotted_freq_range:0.3f} MHz total )")
+    print(f"plotted_freq_range: {plotted_freq_range}")
 
     tick_freqs = np.linspace(plotted_freqs[0], plotted_freqs[-1], num=len(orig_yticks))
     tick_step_mhz = tick_freqs[1] - tick_freqs[0]
-    # print(f"tick_freqs ({len(tick_freqs)}): {tick_freqs} tick_step_mhz: {tick_step_mhz}")
+    print(f"tick_freqs ({len(tick_freqs)}): {tick_freqs} tick_step_mhz: {tick_step_mhz}")
     # matplot places the first frequency offscreen, for whatever reason...
     tick_freqs -= tick_step_mhz
-    # print(f"tick_freqs ({len(tick_freqs)}): {tick_freqs}")
+    print(f"tick_freqs ({len(tick_freqs)}): {tick_freqs}")
     ytick_labels = [f"{freq:0.3f}" for freq in tick_freqs]
-    # print(f"ytick_labels: {ytick_labels}")
+    print(f"ytick_labels: {ytick_labels}")
     axes[0].set_yticklabels(ytick_labels,  rotation=30)
     axes[1].set_yticklabels(ytick_labels,  rotation=30)
 
@@ -364,13 +344,14 @@ def main():
     # axes[2].set_yticks(ticks=orig_yticks, labels=ytick_labels)
 
     final_ylabels = axes[0].get_yticklabels()
-    # print(f"final_ylabels ({len(final_ylabels)}) : {final_ylabels}")
+    print(f"final_ylabels ({len(final_ylabels)}) : {final_ylabels}")
     print(f"Plotting >>> elapsed: {perf_counter()  - perf_start_plotting:0.3f} seconds")
 
     img_save_path = f"{plots_path}pow_diffs/{display_file_name}_N{n_down_buckets}_T{n_integrations_to_process}_dpsd.png"
     print(f"saving image to:\n{img_save_path}")
     plt.savefig(img_save_path)
     # plt.show()
+
 
     print(f"Ultimate >>> elapsed: {perf_counter()  - perf_start_file_ultimate:0.3f} seconds")
 
