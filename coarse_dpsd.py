@@ -147,7 +147,10 @@ def main():
     # logging.getLogger("blimpy").setLevel(logging.DEBUG)
 
     my_dpi=300
-    full_screen_dims=(16, 10)
+    plot_width_dim = 32
+    plot_height_dim = 10
+    plot_wh_ratio = plot_width_dim / plot_height_dim
+    full_screen_dims=(plot_width_dim, plot_height_dim)
 
     perf_start = perf_counter()
     obs_obj = blimpy.Waterfall(data_path, max_load=16, load_data=False)
@@ -202,7 +205,7 @@ def main():
     # assert n_polarities_stored == obs_obj.data.shape[1]
     # assert n_fine_chan == obs_obj.data.shape[2]
 
-    max_n_integrations = int(512*16)
+    max_n_integrations = int(512*plot_wh_ratio)
     n_integrations_to_process = n_integrations_input
     if n_integrations_input > max_n_integrations:
         n_integrations_to_process = max_n_integrations
