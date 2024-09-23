@@ -203,9 +203,9 @@ def main():
     # assert n_fine_chan == obs_obj.data.shape[2]
 
     n_integrations_to_process = n_integrations_input
-    # if n_integrations_input > 512:
-    #     n_integrations_to_process = 512
-    #     print(f"clamping n_integrations_to_process to {n_integrations_to_process}")
+    if n_integrations_input > 512*4:
+        n_integrations_to_process = int(512*4)
+        print(f"clamping n_integrations_to_process to {n_integrations_to_process}")
 
     # tsamp is "Time integration sampling rate in seconds" (from rawspec)
     integration_period_sec = float(obs_obj.header['tsamp'])
