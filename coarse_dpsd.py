@@ -202,9 +202,10 @@ def main():
     # assert n_polarities_stored == obs_obj.data.shape[1]
     # assert n_fine_chan == obs_obj.data.shape[2]
 
+    max_n_integrations = int(512*16)
     n_integrations_to_process = n_integrations_input
-    if n_integrations_input > 512*4:
-        n_integrations_to_process = int(512*4)
+    if n_integrations_input > max_n_integrations:
+        n_integrations_to_process = max_n_integrations
         print(f"clamping n_integrations_to_process to {n_integrations_to_process}")
 
     # tsamp is "Time integration sampling rate in seconds" (from rawspec)
