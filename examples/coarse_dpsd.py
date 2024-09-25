@@ -95,22 +95,27 @@ def grab_next_integration(obs_obj:Waterfall=None):
 
 
 def main():
-
-    parser = argparse.ArgumentParser(description='Analyze power correlation of filterbank files')
+    help_desc = '''
+    Analyze power correlation of filterbank files.
+    Can be fed with exec or xargs, using eg:
+    find ../../filterbank/ -type f -name "*gpuspec.0002*" -exec ./coarse_dpsd.py {} \\;
+    find ../../filterbank/ -type f -name "*gpuspec.8.0001*"   -exec ./coarse_dpsd.py {} \\;
+    '''
+    parser = argparse.ArgumentParser(description=help_desc, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('src_data_path', nargs='?',
                         help="Source hdf5 (.h5) or filerbank (.fil) file path",
-                        default="../../filterbank/blgcsurvey_cband/"
+                        default="../../../filterbank/blgcsurvey_cband/"
                                 "splguppi_58705_10506_BLGCsurvey_Cband_C06_0048.gpuspec.0002.fil"
                                 # "splguppi_58705_10818_BLGCsurvey_Cband_C11_0049.gpuspec.8.0001.fil"
-                        # default="../../filterbank/misc/"
+                        # default="../../../filterbank/misc/"
                                 # "blc20_guppi_57991_66219_DIAG_FRB121102_0020.gpuspec.0001.fil" #  64 coarse chan, 512 fine, 3594240 integrations?
                                 # "voyager_f1032192_t300_v2.fil" # 2 integrations, 63 coarse channels, small
                           # "blc27_guppi_58410_37136_195860_FRB181017_0001.0000.h5" # 44 coarse chans, 78 integrations
-                        # default="../../filterbank/blc07/"
+                        # default=".../../../filterbank/blc07/"
                         #   "blc07_guppi_57650_67573_Voyager1_0002.gpuspec.0000.fil" # 16 integrations
-                        # default="../../filterbank/blc03/"
+                        # default="../../../filterbank/blc03/"
                                 # "blc3_2bit_guppi_57386_VOYAGER1_0002.gpuspec.0000.fil" # 16 integrations, 64 coarse, 66125824 fine
-                        # default="../../filterbank/voyager1_rosetta_blc3/"
+                        # default="../../../filterbank/voyager1_rosetta_blc3/"
                         #    "Voyager1.single_coarse.fine_res.h5" # 16 integrations, single coarse channel
                         #   "Voyager1.single_coarse.fine_res.fil"
                         )
