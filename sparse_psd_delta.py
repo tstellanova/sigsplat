@@ -98,7 +98,6 @@ def main():
                             # "splgupii_58705_11437_BLGCsurvey_Cband_C11_0051.gpuspec.8.0001.fil"
                             # "splgupii_58705_12984_BLGCsurvey_Cband_C12_0056.gpuspec.8.0001.fil"
                             # "splgupii_58705_10818_BLGCsurvey_Cband_C11_0049.gpuspec.8.0001.fil"
-                            # "splgupii_58705_13603_BLGCsurvey_Cband_C12_0058.gpuspec.0000.fil" # LORGE 16 ints, 1664 coarse, 1744830464 fine
                             # "splgupii_58705_13603_BLGCsurvey_Cband_C12_0058.gpuspec.8.0001.fil" # MEDIUM n_coarse_chan: 1664 n_fine_chan: 13312 fine_channel_bw_hz: 366210.9375 suspiciously zero change the entire time??
                             # "splgupii_58705_13603_BLGCsurvey_Cband_C12_0058.gpuspec.0002.fil" # SMOL ints: 279 coarse: 1664 n_fine_chan: 1703936 n_fine_per_coarse: 1024.0
                             # "splguppi_58705_14221_BLGCsurvey_Cband_C12_0060.gpuspec.0002.fil" # 279 ints, 1664 coarse, 1703936 fine

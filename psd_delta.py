@@ -87,21 +87,19 @@ def main():
     parser.add_argument('src_data_path', nargs='?',
                         help="Source hdf5 (.h5) or filerbank (.fil) file path",
                         default="../../filterbank/blgcsurvey_cband/"
-                            "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_10506_BLGCsurvey_Cband_C06_0048.gpuspec.8.0001.fil"
-                                # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_10506_BLGCsurvey_Cband_C06_0048.gpuspec.0002.fil"
-                                # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_09886_BLGCsurvey_Cband_C06_0046.gpuspec.0002.fil"
-                            # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_09886_BLGCsurvey_Cband_C06_0046.gpuspec.8.0001.fil"
-                            # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_11437_BLGCsurvey_Cband_C11_0051.gpuspec.8.0001.fil"
-                            # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_12984_BLGCsurvey_Cband_C12_0056.gpuspec.8.0001.fil"
-                            # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_10818_BLGCsurvey_Cband_C11_0049.gpuspec.8.0001.fil"
-                            # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_13603_BLGCsurvey_Cband_C12_0058.gpuspec.0000.fil" # LORGE 16 ints, 1664 coarse, 1744830464 fine
-                            # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_13603_BLGCsurvey_Cband_C12_0058.gpuspec.8.0001.fil" # MEDIUM n_coarse_chan: 1664 n_fine_chan: 13312 fine_channel_bw_hz: 366210.9375 suspiciously zero change the entire time??
-                            # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_13603_BLGCsurvey_Cband_C12_0058.gpuspec.0002.fil" # SMOL ints: 279 coarse: 1664 n_fine_chan: 1703936 n_fine_per_coarse: 1024.0
-
-                        # "spliced_blc00010203040506o7o01113141516o7o0212223242526o7o031323334353637_guppi_58705_14221_BLGCsurvey_Cband_C12_0060.gpuspec.0002.fil" # 279 ints, 1664 coarse, 1703936 fine
-                            #  "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_18741_BLGCsurvey_Cband_A00_0063.gpuspec.0002.fil" # 120 ints, 1164 coarse, 1703936 fine
-                            # "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_01220_BLGCsurvey_Cband_B04_0018.gpuspec.0002.fil"
-                            # "spliced_blc40414243444546o7o0515253545556o7o0616263646566o7o071727374757677_guppi_58702_18718_BLGCsurvey_Cband_C01_0026.gpuspec.0002.fil"
+                                "splguppi_58705_10506_BLGCsurvey_Cband_C06_0048.gpuspec.8.0001.fil"
+                                # "splguppi_58705_10506_BLGCsurvey_Cband_C06_0048.gpuspec.0002.fil"
+                                # "splguppi_58705_09886_BLGCsurvey_Cband_C06_0046.gpuspec.0002.fil"
+                                # "splguppi_58705_09886_BLGCsurvey_Cband_C06_0046.gpuspec.8.0001.fil"
+                                # "splguppi_58705_11437_BLGCsurvey_Cband_C11_0051.gpuspec.8.0001.fil"
+                                # "splguppi_58705_12984_BLGCsurvey_Cband_C12_0056.gpuspec.8.0001.fil"
+                                # "splguppi_58705_10818_BLGCsurvey_Cband_C11_0049.gpuspec.8.0001.fil"
+                                # "splguppi_58705_13603_BLGCsurvey_Cband_C12_0058.gpuspec.8.0001.fil" # MEDIUM n_coarse_chan: 1664 n_fine_chan: 13312 fine_channel_bw_hz: 366210.9375 suspiciously zero change the entire time??
+                                # "splguppi_58705_13603_BLGCsurvey_Cband_C12_0058.gpuspec.0002.fil" # SMOL ints: 279 coarse: 1664 n_fine_chan: 1703936 n_fine_per_coarse: 1024.0
+                                # "splguppi_58705_14221_BLGCsurvey_Cband_C12_0060.gpuspec.0002.fil" # 279 ints, 1664 coarse, 1703936 fine
+                                # "splguppi_58705_18741_BLGCsurvey_Cband_A00_0063.gpuspec.0002.fil" # 120 ints, 1164 coarse, 1703936 fine
+                                # "splguppi_58705_01220_BLGCsurvey_Cband_B04_0018.gpuspec.0002.fil"
+                                # "splguppi_58702_18718_BLGCsurvey_Cband_C01_0026.gpuspec.0002.fil"
                         # default="../../filterbank/misc/"
                                 # "blc20_guppi_57991_66219_DIAG_FRB121102_0020.gpuspec.0001.fil" #  64 coarse chan, 512 fine, 3594240 integrations?
                                 # "voyager_f1032192_t300_v2.fil" # 2 integrations, 63 coarse channels, small
