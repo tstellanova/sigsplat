@@ -31,8 +31,8 @@ def main():
     help_desc = '''
     Analyze power correlation of filterbank files.
     Can be fed with exec or xargs, using eg:
-    find ../../filterbank/ -type f -name "*gpuspec.0002*" -exec ./coarse_dpsd.py {} \\;
-    find ../../filterbank/ -type f -name "*gpuspec.8.0001*"   -exec ./coarse_dpsd.py {} \\;
+    find ../../filterbank/ -type f -name "*gpuspec.0002*" -exec ./filt_coarse_dpsd.py {} \\;
+    find ../../filterbank/ -type f -name "*gpuspec.8.0001*"   -exec ./filt_coarse_dpsd.py {} \\;
     '''
     parser = argparse.ArgumentParser(description=help_desc, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('src_data_path', nargs='?',

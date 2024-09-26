@@ -131,3 +131,6 @@ def remove_extreme_power_peaks(arr_db: np.ndarray, db_threshold=5) -> np.ndarray
     arr_db[peaks_to_remove] = surrounding_avg[peaks_to_remove]
 
     return arr_db
+
+
+# TODO canonical method for STFT processing of ongoing raw sample updates

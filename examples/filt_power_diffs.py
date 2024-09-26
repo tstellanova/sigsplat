@@ -14,13 +14,7 @@ import argparse
 import os
 import logging
 
-import sigmf
-from matplotlib.ticker import StrMethodFormatter
-from scipy import ndimage
-from sigmf import sigmffile, SigMFFile
-from blimpy import Waterfall
 import matplotlib.pyplot as plt
-import scipy
 
 from sigsplat.convert import fbank, spectralize
 
@@ -28,12 +22,6 @@ matplotlib.use('qtagg')
 
 # performance monitoring
 from time import perf_counter
-
-
-def normalize_power_spectrum(ps):
-    ps = (ps - np.mean(ps)) / np.std(ps)
-    return ps
-
 
 
 def main():
@@ -226,12 +214,6 @@ def main():
     plt.savefig(img_save_path)
 
     plt.show()
-
-
-
-
-
-
 
 
 if __name__ == "__main__":

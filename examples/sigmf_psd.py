@@ -134,7 +134,6 @@ def main():
     print(f" center_freq_hz, sample_rate_hz, freq_lower_edge_hz, freq_upper_edge_hz, total_samples:\n ",
           center_freq_hz, sample_rate_hz, freq_lower_edge_hz, freq_upper_edge_hz, total_samples)
 
-
     freq_resolution = args.freq_resolution
     if freq_resolution is None:
         freq_resolution = sample_rate_hz / 2048
