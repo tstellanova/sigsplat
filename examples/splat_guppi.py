@@ -14,7 +14,6 @@ from blimpy import GuppiRaw
 import os
 
 from scipy import ndimage
-from scipy.optimize import dual_annealing
 
 from time import perf_counter
 

@@ -17,7 +17,6 @@ import os
 
 from blimpy.guppi import EndOfFileError
 from scipy import ndimage
-from scipy.optimize import dual_annealing
 
 from time import perf_counter
 from scipy.signal import ShortTimeFFT

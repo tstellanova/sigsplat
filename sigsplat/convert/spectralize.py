@@ -8,6 +8,7 @@ from time import perf_counter
 def round_to_nearest_power_of_two(n):
     return int(np.power(2, np.round(np.log2(n))))
 
+
 def normalize_data(data: np.ndarray) -> np.ndarray:
     """
     Rescale the data to be small +/-
@@ -15,6 +16,8 @@ def normalize_data(data: np.ndarray) -> np.ndarray:
     :return: Data rescaled to be between about -1.0 and 1.0
     """
     return (data - np.mean(data)) / np.std(data)
+
+
 def safe_scale_log(data: np.ndarray) -> np.ndarray:
     """
     Take the logarithm of the absolute value of the input, then reattach the sign.
@@ -23,7 +26,9 @@ def safe_scale_log(data: np.ndarray) -> np.ndarray:
     :return: Data on a +/- log scale
     """
     return 10 * np.sign(data) * np.log10(np.abs(data) + sys.float_info.epsilon)
-def simple_decimate(data, num_out_buckets:int=None, decimation_factor:int=None) -> np.ndarray:
+
+
+def simple_decimate(data, num_out_buckets: int = None, decimation_factor: int = None) -> np.ndarray:
     """
     A fast but dumb function that doens't perform any pre-filtering on the data before decimating
     :param data:
@@ -34,7 +39,9 @@ def simple_decimate(data, num_out_buckets:int=None, decimation_factor:int=None) 
         decimation_factor = len(data) // num_out_buckets
     decimated_data = data[::decimation_factor]
     return decimated_data
-def gaussian_decimate(data: np.ndarray, num_out_buckets:int=256, sigma=1.0) -> np.ndarray:
+
+
+def gaussian_decimate(data: np.ndarray, num_out_buckets: int = 256, sigma=1.0) -> np.ndarray:
     """
     Decimate a big ndarray to a smaller array, smoothing input data first.
     See also:   scipy.signal.decimate()
@@ -56,7 +63,9 @@ def gaussian_decimate(data: np.ndarray, num_out_buckets:int=256, sigma=1.0) -> n
     # Decimate (downsample)
     decimated_data = filtered_data[::decimation_factor]
     return decimated_data
-def adaptive_filter_dual_pol(pol_a:np.ndarray, pol_b:np.ndarray)-> np.ndarray:
+
+
+def adaptive_filter_dual_pol(pol_a: np.ndarray, pol_b: np.ndarray) -> np.ndarray:
     """
     Given simultaneous samples from two (presumably orthogonal) polarities,
     use Adaptive Filtering to first find the covariance between the two polarities,
@@ -95,10 +104,10 @@ def adaptive_filter_dual_pol(pol_a:np.ndarray, pol_b:np.ndarray)-> np.ndarray:
     # print(f"Adapt Filter >>> elapsed: {perf_counter()  - perf_start_adapt_filt:0.3f} seconds")
     return principal_signal
 
-def remove_extreme_power_peaks(arr_db:np.ndarray, db_threshold=5) -> np.ndarray:
+
+def remove_extreme_power_peaks(arr_db: np.ndarray, db_threshold=5) -> np.ndarray:
     """
-    Remove extreme peaks from an array.
-    Replaces: remove_peaks_vectorized
+    Remove extreme peaks from an array based on their exceptional power
     :param arr_db: Input power data, assumed to be in a decibel (log10) format
     :param db_threshold:
     :return:
@@ -107,7 +116,6 @@ def remove_extreme_power_peaks(arr_db:np.ndarray, db_threshold=5) -> np.ndarray:
     # Identify peaks: Values greater than both their left and right neighbors
     left_shift = np.roll(arr_db, 1)
     right_shift = np.roll(arr_db, -1)
-
     is_peak = (arr_db > left_shift) & (arr_db > right_shift)
 
     # Calculate the average of the neighboring values for each sample
@@ -123,9 +131,3 @@ def remove_extreme_power_peaks(arr_db:np.ndarray, db_threshold=5) -> np.ndarray:
     arr_db[peaks_to_remove] = surrounding_avg[peaks_to_remove]
 
     return arr_db
-
-# def spectralize_it(data:np.ndarray, n_freq_bins:int): np.ndarray) -> np.ndarray :
-
-
-
-
