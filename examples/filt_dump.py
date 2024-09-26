@@ -26,7 +26,7 @@ def main():
     parser.add_argument('src_data_path', nargs='?',
                         help="Source hdf5 (.h5) or filerbank (.fil) file path",
                         # default="../../filterbank/blgcsurvey_cband/"
-                        #     "spliced_blc00010203040506o7o0111213141516o7o0212223242526o7o031323334353637_guppi_58705_18741_BLGCsurvey_Cband_A00_0063.gpuspec.0002.fil"
+                        #     "splguppi_58705_18741_BLGCsurvey_Cband_A00_0063.gpuspec.0002.fil"
                         default="../../filterbank/voyager1_rosetta_blc3/Voyager1.single_coarse.fine_res.h5"
                         )
     args = parser.parse_args()
@@ -77,7 +77,8 @@ def main():
     # rawspec refers to `Nas` as "Number of fine spectra to accumulate per dump"; defaults to 51, 128, 3072
     print(f"Num fine spectra collected per integration: {n_fine_spectra_per_integration}")
     # n_fine_spectra_per_integration =
-    # tsamp           cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i]; // Time integration sampling rate in seconds.
+    # tsamp           cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i];
+    # // Time integration sampling rate in seconds.
 
     one_sample = obs_obj.data[0,0,0]
     print(f"one_sample dtype: {np.dtype(one_sample)} iscomplex: {np.iscomplex(one_sample)}")
