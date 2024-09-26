@@ -20,17 +20,14 @@ from sigmf import sigmffile, SigMFFile
 from blimpy import Waterfall
 import matplotlib.pyplot as plt
 import scipy
+
+from sigsplat.convert import spectralize, fbank
+
 matplotlib.use('qtagg')
 
 # performance monitoring
 from time import perf_counter
 
-
-from scipy.ndimage import gaussian_filter1d
-
-
-def normalize_data(data):
-    return (data - np.mean(data)) / np.std(data)
 
 def remove_n_peaks(data, n_peaks):
     # Step 1: Find the median of the array
@@ -43,23 +40,6 @@ def remove_n_peaks(data, n_peaks):
     data[peak_indices] = median_value
 
     return data
-
-def safe_log(data):
-    return np.log10(np.abs(data) + sys.float_info.epsilon) * np.sign(data)
-
-def simple_decimate(data, num_out_buckets):
-    decimation_factor = len(data) // num_out_buckets
-    decimated_data = data[::decimation_factor]
-    return decimated_data
-
-def gaussian_decimate(data, num_out_buckets, sigma=1.0):
-    filtered_data = gaussian_filter1d(data, sigma=sigma)
-    return simple_decimate(filtered_data, num_out_buckets)
-
-def grab_one_integration(obs_obj:Waterfall=None, integration_idx=0):
-    obs_obj.read_data(t_start=integration_idx, t_stop=integration_idx+1)
-    _, cur_ps = obs_obj.grab_data()
-    return cur_ps
 
 def main():
 
@@ -194,24 +174,12 @@ def main():
     if n_input_buckets != n_fine_chan:
         print(f"processing subset: {n_input_buckets} / {n_fine_chan} fine channels")
 
-    raw_psds = np.zeros((n_integrations_to_process, n_input_buckets), dtype=np.float32 )
+    cur_freqs, raw_psds = fbank.grab_desired_spectra(obs_obj,
+                                                     n_integrations=n_integrations_to_process,
+                                                     n_input_buckets=n_input_buckets
+                                                     )
 
-    print(f"Collecting {n_integrations_to_process} integrations ...")
-    perf_start_collection = perf_counter()
-    for int_idx in range(n_integrations_to_process):
-        cur_ps = grab_one_integration(obs_obj, int_idx)
-        # TODO remove peaks here ?
-        # remove_n_peaks(cur_ps, 2)
-        cur_ps = gaussian_filter1d(cur_ps, sigma=2)
-        raw_psds[int_idx] = cur_ps
-    print(f"Collection >>> elapsed: {perf_counter() - perf_start_collection:0.3f} seconds")
-
-    print(f"Raw PSDs range: {np.min(raw_psds):0.3e} ... {np.max(raw_psds):0.3e}")
-    # perf_start_2dgaussian = perf_counter()
-    # raw_psds = ndimage.gaussian_filter(raw_psds, sigma=1)
-    # print(f"2dgaussian >> elapsed: {perf_counter() - perf_start_2dgaussian:0.3f} seconds")
-    # print(f"Flt PSDs range: {np.min(raw_psds):0.3e} ... {np.max(raw_psds):0.3e}")
-    raw_psds = safe_log(raw_psds)
+    raw_psds = spectralize.safe_scale_log(raw_psds)
     print(f"Log PSDs range: {np.min(raw_psds):0.3e} ... {np.max(raw_psds):0.3e}")
 
     # Using ascending frequency for all plots.
@@ -219,7 +187,7 @@ def main():
         raw_psds = raw_psds[..., ::-1]  # Reverse data
         obs_freqs = obs_freqs[::-1] # Reverse frequencies
 
-    print(f"revised obs_freqs {obs_freqs[0]} ... {obs_freqs[-1]}")
+    print(f"revised obs_freqs {obs_freqs[0]} ... {obs_freqs[-1]} vs {cur_freqs[0]} ... {cur_freqs[-1]}")
 
     # decimate in order to have a reasonable plot size
     n_down_buckets = 1024

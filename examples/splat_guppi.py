@@ -18,25 +18,13 @@ from scipy.optimize import dual_annealing
 
 from time import perf_counter
 
+from sigsplat.convert import fbank, spectralize
 matplotlib.use('qtagg')
 
 
 
-def normalize_data(data):
-    return (data - np.mean(data)) / np.std(data)
 
-def safe_scale_log(data):
-    return 10 * np.sign(data) * np.log10(np.abs(data) + sys.float_info.epsilon)
 
-def gaussian_decimate(data, num_out_buckets, sigma=1.0):
-    # Step 1: Apply Gaussian filter
-    filtered_data = ndimage.gaussian_filter1d(data, sigma=sigma)
-
-    # Step 2: Decimate (downsample)
-    decimation_factor = len(data) // num_out_buckets
-    decimated_data = filtered_data[::decimation_factor]
-
-    return decimated_data
 
 def process_dual_pol_block(chan_pol_a=None, chan_pol_b=None, n_freq_bins=1024, n_vps_rows_per_block=1):
     if chan_pol_a is None:

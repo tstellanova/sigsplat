@@ -4,71 +4,21 @@ Look for changes in power over time
 """
 import argparse
 
-import blimpy
 import matplotlib
 import matplotlib.pyplot as plt
-import sys
 
 import numpy as np
 from blimpy import GuppiRaw
 import os
 
 from scipy import ndimage
-from scipy.optimize import dual_annealing
 
 from time import perf_counter
-from scipy.linalg import eigh
+from sigsplat.convert import spectralize
 
 matplotlib.use('qtagg')
 
 
-
-def normalize_data(data):
-    return (data - np.mean(data)) / np.std(data)
-
-def safe_scale_log(data):
-    return 10 * np.sign(data) * np.log10(np.abs(data) + sys.float_info.epsilon)
-
-def gaussian_decimate(data, num_out_buckets, sigma=1.0):
-    # Step 1: Apply Gaussian filter
-    filtered_data = ndimage.gaussian_filter1d(data, sigma=sigma)
-
-    # Step 2: Decimate (downsample)
-    decimation_factor = len(data) // num_out_buckets
-    decimated_data = filtered_data[::decimation_factor]
-
-    return decimated_data
-
-
-def adaptive_filter_dual_pol(pol_a, pol_b):
-    outshape = pol_a.shape
-    out_dtype = pol_a.dtype
-    print(f"Start Adaptive Filter...for {outshape} ({out_dtype})")
-
-    perf_start_adapt_filt = perf_counter()
-    # Form the 2xN matrix from the two polarizations (N samples per polarization)
-    X = np.vstack((pol_a.flatten(), pol_b.flatten()))
-    print(f"stacked pols: {X.shape} vs pol_a: {pol_a.shape}")
-
-    # Compute the covariance matrix of the signals
-    R = np.cov(X)  # This gives a 2x2 covariance matrix
-    print(f"covariance shape: {R.shape}\n{R}")
-
-    # Perform eigenvalue decomposition on the covariance matrix
-    eigenvalues, eigenvectors = eigh(R)
-    print(f"eigenvalues: {eigenvalues} \neigenvectors:\n{eigenvectors}")
-    # Select the eigenvector associated with the largest eigenvalue (this is the principal component)
-    peak_eigenvec = np.argmax(eigenvalues)
-    print(f"peak_eigenvec: {peak_eigenvec}")
-    principal_component = eigenvectors[:, peak_eigenvec]
-
-    # Filter the signals using the principal component (project onto the dominant direction)
-    principal_signal = np.dot(principal_component, X)
-    print(f"reshape {principal_signal.shape} into {outshape}")
-    principal_signal = np.reshape(principal_signal, outshape)
-    principal_signal = np.astype(principal_signal, out_dtype)
-    print(f"Adapt Filter >>> elapsed: {perf_counter()  - perf_start_adapt_filt:0.3f} seconds")
-    return principal_signal
 
 
 def process_dual_pol_block(chan_pol_a=None, chan_pol_b=None, n_freq_bins=1024, n_vps_rows_per_block=1):
@@ -97,7 +47,7 @@ def process_dual_pol_block(chan_pol_a=None, chan_pol_b=None, n_freq_bins=1024, n
     chan_pol_b_view = np.reshape(chan_pol_b_view, newshape)
     print(f"chan_pol_a_view {chan_pol_a_view.shape}")
 
-    principal_signal = adaptive_filter_dual_pol(chan_pol_a_view, chan_pol_b_view)
+    principal_signal = spectralize.adaptive_filter_dual_pol(chan_pol_a_view, chan_pol_b_view)
     print(f"principal_signal: {principal_signal.shape} {principal_signal.dtype}")
 
     window_filter = np.hanning(n_freq_bins)

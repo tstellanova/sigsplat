@@ -27,24 +27,6 @@ matplotlib.use('qtagg')
 
 MAX_PLT_POINTS = 65536 * 4  # Max number of points in matplotlib plot
 
-def normalize_data(data):
-    return (data - np.mean(data)) / np.std(data)
-
-
-def safe_scale_log(data):
-    return 10 * np.sign(data) * np.log10(np.abs(data) + sys.float_info.epsilon)
-
-
-def gaussian_decimate(data, num_out_buckets, sigma=1.0):
-    # Step 1: Apply Gaussian filter
-    filtered_data = ndimage.gaussian_filter1d(data, sigma=sigma)
-
-    # Step 2: Decimate (downsample)
-    decimation_factor = len(data) // num_out_buckets
-    decimated_data = filtered_data[::decimation_factor]
-
-    return decimated_data
-
 
 def skip_to_block(bb_reader, dest_block_num=2):
     """ Quickly seek through the file to skip to a block of interest
@@ -67,7 +49,6 @@ def skip_to_block(bb_reader, dest_block_num=2):
             break
 
     return n_blocks
-
 
 
 def process_dual_pol_block(stft_obj=None, full_energy_correction=None, chan_pol_a=None, chan_pol_b=None, n_freq_bins=1024, fs=100e6):

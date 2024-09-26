@@ -30,56 +30,8 @@ import scipy
 from time import perf_counter
 
 
-from scipy.ndimage import gaussian_filter1d
+from sigsplat.convert import spectralize, fbank
 
-def round_to_nearest_power_of_two(n):
-    return int(np.power(2, np.round(np.log2(n))))
-
-def normalize_data(data):
-    return (data - np.mean(data)) / np.std(data)
-
-def remove_peaks_vectorized(arr_db, db_threshold=5):
-
-    # Identify peaks: Values greater than both their left and right neighbors
-    left_shift = np.roll(arr_db, 1)
-    right_shift = np.roll(arr_db, -1)
-
-    is_peak = (arr_db > left_shift) & (arr_db > right_shift)
-
-    # Calculate the average of the neighboring values for each sample
-    surrounding_avg = (left_shift + right_shift) / 2
-
-    # Find peaks that exceed the threshold compared to the neighboring average
-    exceeds_threshold = (arr_db - surrounding_avg) >= db_threshold
-
-    # Get the positions of peaks that meet both conditions
-    peaks_to_remove = is_peak & exceeds_threshold
-
-    # Replace the peaks with the surrounding average
-    arr_db[peaks_to_remove] = surrounding_avg[peaks_to_remove]
-
-    return arr_db
-
-def safe_log(data):
-    return np.log10(np.abs(data) + sys.float_info.epsilon) * np.sign(data)
-
-def simple_decimate(data, num_out_buckets):
-    decimation_factor = len(data) // num_out_buckets
-    decimated_data = data[::decimation_factor]
-    return decimated_data
-
-def gaussian_decimate(data, num_out_buckets, sigma=1.0):
-    filtered_data = gaussian_filter1d(data, sigma=sigma)
-    return simple_decimate(filtered_data, num_out_buckets)
-
-def grab_one_integration(obs_obj:Waterfall=None, integration_idx=0):
-    obs_obj.read_data(t_start=integration_idx, t_stop=integration_idx+1)
-    _, cur_ps = obs_obj.grab_data()
-    if cur_ps.dtype != np.float32:
-        # should we scale these, or does it not matter?
-        cur_ps = np.float32(cur_ps)
-    # print(f"integration {integration_idx} {cur_ps.shape} {cur_ps.dtype}")
-    return cur_ps
 
 def main():
 
@@ -216,7 +168,6 @@ def main():
         print(f"WARN file nbits: {file_nbits}")
     # assert file_nbits == 32
 
-
     if obs_obj.container.isheavy():
         selection_size_bytes =  obs_obj.container._calc_selection_size()
         selection_shape = obs_obj.container.selection_shape
@@ -238,39 +189,24 @@ def main():
     if n_input_buckets != n_fine_chan:
         print(f"processing subset: {n_input_buckets} / {n_fine_chan} fine channels")
 
-    raw_psds = np.zeros((n_integrations_to_process, n_input_buckets), dtype=np.float32 )
-
-    print(f"Collecting {n_integrations_to_process} integrations ...")
-    perf_start_collection = perf_counter()
-    for int_idx in range(n_integrations_to_process):
-        cur_ps = grab_one_integration(obs_obj, int_idx)
-        # convert power counts to db
-        cur_ps = safe_log(cur_ps)
-        # The filt data often has one or more narrow "DC-offset" peaks -- we attempt to remove those here
-        # cur_ps = remove_peaks_vectorized(cur_ps, db_threshold=3)
-        # this performs a low-pass filter on changes between adjacent frequency bins
-        cur_ps = gaussian_filter1d(cur_ps, sigma=3)
-        raw_psds[int_idx] = cur_ps
-    print(f"Collection >>> elapsed: {perf_counter() - perf_start_collection:0.3f} seconds")
-
-    min_raw_psd = np.min(raw_psds)
-    max_raw_psd = np.max(raw_psds)
-
-    print(f"Raw PSDs range: {min_raw_psd:0.3e} ... {max_raw_psd:0.3e}")
+    cur_freqs, raw_psds = fbank.grab_desired_spectra(obs_obj,
+                                          n_integrations=n_integrations_to_process,
+                                          n_input_buckets=n_input_buckets
+                                          )
 
     # Using ascending frequency for all plots.
     if obs_obj.header['foff'] < 0:
         raw_psds = raw_psds[..., ::-1]  # Reverse data
         obs_freqs = obs_freqs[::-1] # Reverse frequencies
 
-    print(f"revised obs_freqs {obs_freqs[0]} ... {obs_freqs[-1]}")
+    print(f"revised obs_freqs {obs_freqs[0]} ... {obs_freqs[-1]} vs {cur_freqs[0]} ... {cur_freqs[-1]}")
 
     coarse_chan_multiple = 4
     lane_bandwidth_mhz = coarse_channel_bw_mhz * coarse_chan_multiple
     coarse_chan_multiple = total_sampling_rate_mhz / coarse_channel_bw_mhz
     # decimate in order to have a reasonable plot size
     raw_effective_buckets = np.ceil(total_sampling_rate_mhz / lane_bandwidth_mhz)
-    n_effective_buckets = round_to_nearest_power_of_two(raw_effective_buckets)
+    n_effective_buckets = spectralize.round_to_nearest_power_of_two(raw_effective_buckets)
     print(f"raw_effective_buckets: {raw_effective_buckets} n_effective_buckets: {n_effective_buckets}")
 
     n_down_buckets = n_coarse_chan

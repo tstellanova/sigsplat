@@ -21,6 +21,9 @@ from sigmf import sigmffile, SigMFFile
 from blimpy import Waterfall
 import matplotlib.pyplot as plt
 import scipy
+
+from sigsplat.convert import fbank, spectralize
+
 matplotlib.use('qtagg')
 
 # performance monitoring
@@ -31,57 +34,7 @@ def normalize_power_spectrum(ps):
     ps = (ps - np.mean(ps)) / np.std(ps)
     return ps
 
-def min_max_reduction(matrix, num_segments):
-    M, N = matrix.shape
-    segment_length = N // num_segments
-    print(f"matrix shape: {matrix.shape} num_segs {num_segments} segment_len {segment_length}")
 
-    # Initialize the reduced matrix
-    reduced_matrix = np.zeros((M, 2 * num_segments))
-
-    for i in range(M):
-        reshaped_row = matrix[i, :segment_length * num_segments].reshape(num_segments, segment_length)
-
-        # Calculate min and max for each segment
-        mins = np.min(reshaped_row, axis=1)
-        maxs = np.max(reshaped_row, axis=1)
-
-        # Interleave the mins and maxs in the reduced row
-        reduced_matrix[i, :] = np.column_stack((mins, maxs)).flatten()
-
-    print(f"reduced matrix shape: {reduced_matrix.shape}")
-    return reduced_matrix
-
-def safe_log(data):
-    return np.log10(np.abs(data) + sys.float_info.epsilon) * np.sign(data)
-
-from scipy.ndimage import gaussian_filter1d
-
-def gaussian_decimate(data, num_out_buckets, sigma=1.0):
-    # Step 1: Apply Gaussian filter
-    filtered_data = gaussian_filter1d(data, sigma=sigma)
-
-    # Step 2: Decimate (downsample)
-    decimation_factor = len(data) // num_out_buckets
-    decimated_data = filtered_data[::decimation_factor]
-
-    return decimated_data
-
-def nearest_power2(N):
-    # Calculate log2 of N
-    a = int(np.log2(N))
-
-    # If 2^a is equal to N, return N
-    if 2**a == N:
-        return N
-
-    # Return 2^(a + 1)
-    return 2**(a + 1)
-
-def grab_one_integration(obs_obj=None, int_idx=0):
-    obs_obj.read_data(t_start=int_idx, t_stop=int_idx+1)
-    _, cur_ps = obs_obj.grab_data()
-    return cur_ps
 
 def main():
 
@@ -197,15 +150,15 @@ def main():
     _, first_ps = obs_obj.grab_data(t_start=0, t_stop=1)
     print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
     print(f"one integration shape: {first_ps.shape} ")
-    prior_ps_normalized = normalize_power_spectrum(first_ps)
+    prior_ps_normalized = spectralize.normalize_data(first_ps)
 
     print(f"Walking {n_integrations_to_process} integrations ...")
     perf_start = perf_counter()
     for int_idx in range(n_integrations_to_process):
         print(f"integration: {int_idx}")
-        cur_ps = grab_one_integration(obs_obj,int_idx)
-        cur_ps_normalized = normalize_power_spectrum(cur_ps)
-        cur_diff =  np.subtract(cur_ps_normalized, prior_ps_normalized) # x1 - x2
+        cur_ps = fbank.grab_one_integration(obs_obj, int_idx)
+        cur_ps_normalized =  spectralize.normalize_data(cur_ps)
+        cur_diff = np.subtract(cur_ps_normalized, prior_ps_normalized) # x1 - x2
         power_diffs[int_idx] = np.sign(cur_diff) * (cur_diff * cur_diff)
         prior_ps_normalized = cur_ps_normalized
         cur_ps = None
@@ -217,14 +170,14 @@ def main():
     # something like 16 x 1048576 difference values
     # need to decimate to make platting work
 
-    down_buckets =  1024
+    down_buckets = 1024
 
     if n_fine_chan > down_buckets:
         print(f"Decimating {n_fine_chan} fine channels to {down_buckets} buckets, ratio: {n_fine_chan / down_buckets} ...")
         perf_start = perf_counter()
         # decimated_data = np.array([scipy.signal.decimate(row, down_buckets, ftype='iir') for row in power_diffs])
         # decimated_data = np.array([scipy.signal.decimate(row, down_buckets, ftype='fir') for row in power_diffs])
-        decimated_data = np.array([gaussian_decimate(row, down_buckets) for row in power_diffs])
+        decimated_data = np.array([spectralize.gaussian_decimate(row, num_out_buckets=down_buckets) for row in power_diffs])
         print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
     else:
         down_buckets = n_fine_chan
@@ -232,7 +185,7 @@ def main():
 
     power_diffs = None
     # plot_data = decimated_data
-    plot_data = safe_log(decimated_data)
+    plot_data = spectralize.safe_scale_log(decimated_data)
     decimated_data = None
 
     print(f"Plotting {plot_data.shape} ...")

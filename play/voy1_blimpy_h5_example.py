@@ -13,9 +13,7 @@ import blimpy
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-import sigmf
 from matplotlib.ticker import StrMethodFormatter
-from sigmf import sigmffile, SigMFFile
 from blimpy import Waterfall
 
 

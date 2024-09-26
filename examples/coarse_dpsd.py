@@ -14,14 +14,8 @@ import argparse
 import os
 import logging
 
-import sigmf
-from matplotlib.ticker import StrMethodFormatter
-from scipy import ndimage
-from scipy.signal import find_peaks
-from sigmf import sigmffile, SigMFFile
 from blimpy import Waterfall
 import matplotlib.pyplot as plt
-import scipy
 
 # the following may only be required if doing interactive matplot on some platforms:
 # matplotlib.use('qtagg')
@@ -29,69 +23,8 @@ import scipy
 # performance monitoring
 from time import perf_counter
 
+from sigsplat.convert import spectralize, fbank
 
-from scipy.ndimage import gaussian_filter1d
-
-def round_to_nearest_power_of_two(n):
-    return int(np.power(2, np.round(np.log2(n))))
-
-def normalize_data(data):
-    return (data - np.mean(data)) / np.std(data)
-
-def remove_peaks_vectorized(arr_db, db_threshold=5):
-
-    # Identify peaks: Values greater than both their left and right neighbors
-    left_shift = np.roll(arr_db, 1)
-    right_shift = np.roll(arr_db, -1)
-
-    is_peak = (arr_db > left_shift) & (arr_db > right_shift)
-
-    # Calculate the average of the neighboring values for each sample
-    surrounding_avg = (left_shift + right_shift) / 2
-
-    # Find peaks that exceed the threshold compared to the neighboring average
-    exceeds_threshold = (arr_db - surrounding_avg) >= db_threshold
-
-    # Get the positions of peaks that meet both conditions
-    peaks_to_remove = is_peak & exceeds_threshold
-
-    # Replace the peaks with the surrounding average
-    arr_db[peaks_to_remove] = surrounding_avg[peaks_to_remove]
-
-    return arr_db
-
-def safe_log(data):
-    return np.log10(np.abs(data) + sys.float_info.epsilon) * np.sign(data)
-
-def simple_decimate(data, num_out_buckets):
-    decimation_factor = len(data) // num_out_buckets
-    decimated_data = data[::decimation_factor]
-    return decimated_data
-
-def gaussian_decimate(data, num_out_buckets, sigma=1.0):
-    filtered_data = gaussian_filter1d(data, sigma=sigma)
-    return simple_decimate(filtered_data, num_out_buckets)
-
-def grab_one_integration(obs_obj:Waterfall=None, integration_idx=0):
-    t_start = integration_idx
-    t_stop = t_start + 1
-
-    obs_obj.read_data(t_start=t_start, t_stop=t_stop)
-    cur_freqs, cur_ps = obs_obj.grab_data(t_start=t_start, t_stop=t_stop)
-    if cur_ps.dtype != np.float32:
-        # TODO should we rescale these, or does it not matter?
-        cur_ps = np.float32(cur_ps)
-    cur_ps.squeeze()
-    print(f"integration {t_start} {cur_ps.shape} {cur_ps.dtype}")
-    return cur_freqs, cur_ps
-
-def grab_next_integration(obs_obj:Waterfall=None):
-    cur_freqs, cur_ps = obs_obj.grab_data()
-    if cur_ps.dtype != np.float32:
-        # TODO should we rescale these, or does it not matter?
-        cur_ps = np.float32(cur_ps)
-
-    return cur_freqs, cur_ps
 
 
 def main():
@@ -265,15 +198,15 @@ def main():
     perf_start_collection = perf_counter()
     for int_idx in range(n_integrations_to_process):
         obs_obj = blimpy.Waterfall(data_path, max_load=16, t_start=int_idx, t_stop=int_idx+1)
-        cur_freqs, cur_ps = grab_next_integration(obs_obj)
+        cur_freqs, cur_ps = fbank.grab_next_integration(obs_obj)
         perf_start_integ_processing  = perf_counter()
         # immediately convert power counts to db
-        cur_ps = safe_log(cur_ps)
+        cur_ps = spectralize.safe_scale_log(cur_ps)
         # TODO The filt data often has one or more narrow "DC-offset" peaks -- we attempt to remove those here
-        cur_ps = remove_peaks_vectorized(cur_ps, db_threshold=3)
+        cur_ps = spectralize.remove_extreme_power_peaks(cur_ps, db_threshold=3)
         # this performs a low-pass filter on changes between adjacent frequency bins
         if len(cur_ps) > n_down_buckets:
-            cur_ps = gaussian_decimate(cur_ps, n_down_buckets, sigma=3)
+            cur_ps = spectralize.gaussian_decimate(cur_ps, n_down_buckets, sigma=3)
         raw_psds[int_idx] = cur_ps
         if prior_ps is None:
             prior_ps = cur_ps
