@@ -2,7 +2,7 @@
 Example used to extract the Voyager narrowband signal
 from a GUPPI .raw file
 as well as from a filterbank .fil file
-This example assumes certain well-known GBT files are present in a ./data subdirectory
+This example assumes certain well-known GBT files are present
 """
 import blimpy.io.sigproc
 import pylab as plt
@@ -13,7 +13,8 @@ import matplotlib
 # this might only be necessary on macos: run eg 'pip install PyQt5' first
 matplotlib.use('qtagg')
 
-obs = Waterfall('../../filterbank/misc/voyager_f1032192_t300_v2.fil')
+filt_file_path = '../../filterbank/misc/voyager_f1032192_t300_v2.fil'
+obs = Waterfall(filt_file_path)
 obs.info()
 # this the data printed by obs.info:
 pprint(obs.header)
@@ -35,18 +36,18 @@ full_screen_dims=(3456 / my_dpi, 2234 / my_dpi)
 #obs.plot_spectrum()
 #plt.xticks(rotation=-45, ha="left")
 #plt.title("full spectrum")
-#plt.savefig('./img/spectrum.png')
+#plt.savefig('./plots/voyager/spectrum.png')
 
 plt.figure(figsize=full_screen_dims, dpi=my_dpi)
 obs.plot_waterfall(f_start=8420.193, f_stop=8420.24, logged=True)
 plt.title("waterfall")
-plt.savefig('./img/waterfall.png')
+plt.savefig('./plots/voyager/waterfall.png')
 
 plt.figure(figsize=full_screen_dims)
 plt.xticks(rotation=-45, ha="left")
 obs.plot_spectrum(f_start=8420.18, f_stop=8420.26, logged=True) #from sideband to sideband
 plt.title("full signal")
-plt.savefig('./img/full_sig.png')
+plt.savefig('./plots/voyager/full_sig.png')
 
 # todo measure full range
 (plot_f, plot_efields) = obs.grab_data(f_start=8402.0, f_stop=8588.0)
@@ -87,7 +88,7 @@ plt.xticks(rotation=-45, ha="left")
 obs.plot_spectrum(f_start=8420.238, f_stop=8420.24) # right sideband
 plt.title("right sideband")
 plt.tight_layout()
-plt.savefig('./img/bands.png')
+plt.savefig('./plots/bands.png')
 
 # plt.figure(figsize=full_screen_dims)
 # plt.xticks(rotation=-45, ha="left")

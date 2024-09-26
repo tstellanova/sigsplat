@@ -209,7 +209,7 @@ def main():
     axes[1].set_ylabel('BB MHz')
 
     print(f"elapsed: {perf_counter()  - perf_start:0.3f} seconds")
-    img_save_path = f"./img/{src_data_filename}.powdiff.png"
+    img_save_path = f"./plots/{src_data_filename}.powdiff.png"
     print(f"saving image to:\n{img_save_path}")
     plt.savefig(img_save_path)
 

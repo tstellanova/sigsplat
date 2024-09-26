@@ -335,7 +335,7 @@ def main():
         cbar1.set_label('abs(ΔPSD) dB', rotation=270, labelpad=15)
         cbar1.ax.yaxis.set_ticks_position( 'left')
 
-        img_save_path = f"./img/pow_diffs/{display_file_name}.N{n_freq_bins}_sflux.png"
+        img_save_path = f"./plots/pow_diffs/{display_file_name}.N{n_freq_bins}_sflux.png"
         print(f"saving image to:\n{img_save_path} ...")
         plt.savefig(img_save_path)
 
