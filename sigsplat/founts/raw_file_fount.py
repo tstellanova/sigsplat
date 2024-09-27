@@ -9,8 +9,10 @@ class RawBasebandFileFount(DataFount):
     """ This class handles raw baseband files
     """
 
-    def __init__(self, filepath:str, is_complex:bool=True, in_dtype:np.dtype=np.int8):
-        super(RawBasebandFileFount, self).__init__()
+    def __init__(self, filepath:str, num_polarizations:int = 1, is_complex:bool=True, in_dtype:np.dtype=np.int8):
+        super(RawBasebandFileFount, self).__init__(num_polarizations=num_polarizations)
+        super(WgnFount, self).__init__()
+
         self.logger.info(f"datafount {__name__} init")
         if filepath and os.path.isfile(filepath):
             self.file_size_bytes = os.path.getsize(filepath)

@@ -1,8 +1,11 @@
 import sys
 import numpy as np
+import scipy
 from scipy import ndimage
 from scipy.linalg import eigh
 from time import perf_counter
+
+from scipy.signal import ShortTimeFFT
 
 
 def round_to_nearest_power_of_two(n):
@@ -134,3 +137,15 @@ def remove_extreme_power_peaks(arr_db: np.ndarray, db_threshold=5) -> np.ndarray
 
 
 # TODO canonical method for STFT processing of ongoing raw sample updates
+def calc_psd_using_stft(signal: np.ndarray, stft_obj: None, n_freq_bins: int = 64, sampling_freq_hz: np.float32 = 1E6 ) -> (ShortTimeFFT, np.ndarray[float]):
+    if stft_obj is None:
+        window = scipy.signal.get_window('hann', n_freq_bins)  # Hanning window
+        stft_obj = ShortTimeFFT(fs=sampling_freq_hz, win=window, hop=n_freq_bins // 2, fft_mode='centered', scale_to='psd')
+    stft_series = stft_obj.stft(signal)
+    # stft_series = stft_series[:, :, 0].squeeze() # TODO tmp for now just grab the first in the time series
+    psd_series = np.abs(stft_series) ** 2
+    # scale_to should already scale stft result to, essentially, sqrt(PSD) values
+    psd_series = psd_series.astype(np.float32)
+    # convert to db
+    psd_series = safe_scale_log(psd_series)
+    return stft_obj, psd_series
